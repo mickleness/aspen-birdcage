@@ -160,6 +160,8 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.follett.fsc.core.k12.business.OrganizationManager.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.attendance.AttendanceManagerFactory.class);
+		sourceCodeManager
+				.addClasses(com.follett.fsc.core.k12.business.WriteEmailManager.class);
 
 		// helpers
 		sourceCodeManager
@@ -204,7 +206,7 @@ public class XrayExport extends ToolJavaSource {
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.tools.reports.ReportConstants.class);
 		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.ReportConstants.class);
+				.addClasses(com.follett.fsc.core.k12.business.ValidationConstants.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.beans.SisPreferenceConstants.class);
 		sourceCodeManager.addClasses(com.x2dev.utils.UtilsConstants.class);
@@ -213,6 +215,8 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.follett.fsc.core.k12.web.AppConstants.class);
 
 		// misc
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.beans.StaffAttendanceSub.SubstituteType.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.web.SisUserDataContainer.class);
 		sourceCodeManager
