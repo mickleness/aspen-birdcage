@@ -10,23 +10,22 @@
  */
 package com.pump.io;
 
-
 /** This is an exception related to a poorly formed Token. */
 public class ParserException extends RuntimeException {
 	private static final long serialVersionUID = 1L;
-	
+
 	protected Token token;
-	
-	public ParserException(Token token,Throwable throwable) {
+
+	public ParserException(Token token, Throwable throwable) {
 		super(throwable);
 		this.token = token;
 	}
-	
-	public ParserException(Token token,String msg) {
+
+	public ParserException(Token token, String msg) {
 		super(msg);
 		this.token = token;
 	}
-	
+
 	public Token getToken() {
 		return token;
 	}

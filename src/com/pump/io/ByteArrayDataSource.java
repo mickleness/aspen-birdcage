@@ -15,12 +15,12 @@ public class ByteArrayDataSource implements DataSource {
 	protected byte[] data;
 	protected String name, mimeType;
 
-	public ByteArrayDataSource(byte[] data,String name,String mimeType) {
-		if(data==null)
+	public ByteArrayDataSource(byte[] data, String name, String mimeType) {
+		if (data == null)
 			throw new NullPointerException();
-		if(name==null)
+		if (name == null)
 			throw new NullPointerException();
-		if(mimeType==null)
+		if (mimeType == null)
 			throw new NullPointerException();
 
 		this.data = data;
@@ -29,31 +29,26 @@ public class ByteArrayDataSource implements DataSource {
 	}
 
 	@Override
-	public String getContentType()
-	{
+	public String getContentType() {
 		return mimeType;
 	}
 
 	@Override
-	public InputStream getInputStream() throws IOException
-	{
+	public InputStream getInputStream() throws IOException {
 		return new ByteArrayInputStream(data);
 	}
 
 	@Override
-	public String getName()
-	{
+	public String getName() {
 		return name;
 	}
 
 	@Override
-	public OutputStream getOutputStream() throws IOException
-	{
+	public OutputStream getOutputStream() throws IOException {
 		return new ByteArrayOutputStream() {
 
 			@Override
-			public void close() throws IOException
-			{
+			public void close() throws IOException {
 				super.close();
 				data = toByteArray();
 			}
