@@ -5,6 +5,6 @@
 	<classpathentry kind="lib" path="lib/java-json.jar"/>
 	<classpathentry kind="lib" path="lib/junit-4.8.2.jar"/>
 	<classpathentry kind="lib" path="lib/servlet-api.jar"/>
-	<classpathentry kind="lib" path="lib/aspen-xr-5.8.0.346.jar"/>
+	<classpathentry kind="lib" path="lib/aspen-xr.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

@@ -84,6 +84,8 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.follett.fsc.core.k12.tools.procedures.WorkflowProcedure.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.tools.procedures.SessionAwareProcedure.class);
+		sourceCodeManager
+				.addClasses(com.follett.fsc.core.k12.tools.procedures.QuickLetterData.class);
 
 		// data sources
 		sourceCodeManager
