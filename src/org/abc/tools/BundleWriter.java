@@ -7,7 +7,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -94,6 +96,7 @@ public class BundleWriter {
 		Tool tool = (Tool) c.getAnnotation(Tool.class);
 		if (tool != null) {
 			String javaSource = writeBundle(c, tool.id(), tool.name(),
+					tool.input(), tool.category(), tool.nodes(),
 					!copyToClipboard);
 			if (copyToClipboard) {
 				StringSelection selection = new StringSelection(javaSource);
@@ -105,25 +108,51 @@ public class BundleWriter {
 	}
 
 	private String writeBundle(Class c, String toolID, String toolName,
-			boolean output) throws Exception {
+			String inputXML, String category, String[] nodes, boolean output)
+			throws Exception {
 		File javaFile = context.getJavaFile(c.getName());
+		File inputXMLFile = null;
+
+		if (inputXML != null && !inputXML.isEmpty()) {
+			inputXMLFile = new File(javaFile.getParentFile(), inputXML);
+			if (!inputXMLFile.exists()) {
+				throw new IllegalArgumentException("For tool \"" + c.getName()
+						+ ", the input XML \"" + inputXML
+						+ "\", was requested, but the file "
+						+ inputXMLFile.getAbsolutePath() + " does not exist.");
+			}
+		} else {
+			inputXMLFile = null;
+		}
 
 		Charset charset = Charset.forName("UTF-8");
-		File target = new File(targetDir, toolName + ".zip");
+		File target = new File(targetDir, toolName + ".bundle");
 		String javaSource;
 		try (FileOutputStream fileOut = new FileOutputStream(target)) {
 			try (ZipOutputStream zipOut = new ZipOutputStream(fileOut)) {
-				String bundleXml = createBundleXml(c, toolID, toolName);
+				String inputXMLFilename = inputXMLFile == null ? null
+						: inputXMLFile.getName();
+				String bundleXml = createBundleXml(c, toolID, toolName,
+						inputXMLFilename, category, nodes);
 				zipOut.putNextEntry(new ZipEntry("bundle-definition.xml"));
 				zipOut.write(bundleXml.getBytes(charset));
-				zipOut.putNextEntry(new ZipEntry(c.getCanonicalName().replace(
-						".", "/")
-						+ ".java"));
+
+				String javaEntryName = c.getCanonicalName().replace(".", "/")
+						+ ".java";
+				zipOut.putNextEntry(new ZipEntry(javaEntryName));
 				Breakout breakout = new Breakout(context, javaFile);
 				// TODO: it'd be great if we compiled the java source code
 				// against aspen xr and verified it was compiler-error-free
 				javaSource = breakout.toString();
 				zipOut.write(javaSource.getBytes(charset));
+
+				if (inputXMLFilename != null) {
+					String xmlEntryName = javaEntryName.substring(0,
+							javaEntryName.lastIndexOf("/") + 1)
+							+ inputXMLFilename;
+					zipOut.putNextEntry(new ZipEntry(xmlEntryName));
+					IOUtils.write(inputXMLFile, zipOut);
+				}
 			}
 		}
 		if (output)
@@ -132,7 +161,22 @@ public class BundleWriter {
 		return javaSource;
 	}
 
-	private String createBundleXml(Class c, String toolID, String toolName) {
+	private String createBundleXml(Class c, String toolID, String toolName,
+			String inputXMLFilename, String category, String[] nodes) {
+
+		// TODO: it'd be great if we validated this XML, too. There's a lot that
+		// we're injecting that could be either bad XML, or violate the tool
+		// input's dtd.
+
+		List<String> nodeList = new ArrayList<>();
+		if (nodes != null) {
+			for (String node : nodes) {
+				if (node != null && !node.isEmpty()) {
+					nodeList.add(node);
+				}
+			}
+		}
+
 		StringBuilder sb = new StringBuilder();
 		sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
 		String date = new SimpleDateFormat("YYYY-MM-dd").format(new Date());
@@ -141,10 +185,26 @@ public class BundleWriter {
 		ToolType type = getToolType(c);
 		sb.append("  <" + type.plural + " package=\""
 				+ c.getPackage().getName() + "\">\n");
-		// TODO: include 'input-file="PdfSimulatorJavaSourceInput.xml"'
 		sb.append("    <" + type.single + " id=\"" + toolID + "\" name=\""
 				+ toolName + "\" javasource-file=\"" + c.getSimpleName()
-				+ ".java" + "\"" + "/>\n");
+				+ ".java\"");
+		if (inputXMLFilename != null && inputXMLFilename.length() > 0) {
+			sb.append(" input-file=\"" + inputXMLFilename + "\"");
+		}
+		if (category != null && category.length() > 0) {
+			sb.append(" category=\"" + category + "\"");
+		}
+
+		if (nodeList.size() == 0) {
+			sb.append("/>\n");
+		} else {
+			sb.append(">\n");
+			for (String node : nodeList) {
+				sb.append("      <node " + node + "/>\n");
+			}
+			sb.append("    </" + type.single + ">\n");
+		}
+
 		sb.append("  </" + type.plural + ">\n");
 
 		sb.append("</tool-bundle>");

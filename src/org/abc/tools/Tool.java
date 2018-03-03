@@ -21,4 +21,25 @@ public @interface Tool {
 	 * on what the tool class extends.
 	 */
 	String type() default "";
+
+	/**
+	 * This optional attribute identifies the filename of the XML file
+	 * containing the input parameters.
+	 */
+	String input() default "";
+
+	/**
+	 * This optional attribute identifies the category of the tool.
+	 */
+	String category() default "";
+
+	/**
+	 * This optional attribute returns an array of the nodes to write in the
+	 * tool bundle. For example one String this may return might be:
+	 * 
+	 * <pre>
+	 * key="student.std.list" build-view="true" org1-view="true" health-view="true" iep-view="true" school-view="true" staff-view="true"
+	 * </pre>
+	 */
+	String[] nodes() default "";
 }
