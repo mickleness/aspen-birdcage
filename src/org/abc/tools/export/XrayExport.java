@@ -237,6 +237,10 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.follett.fsc.core.k12.web.AppGlobals.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.beans.path.SisBeanPaths.class);
+		sourceCodeManager
+				.addClasses(com.follett.fsc.core.framework.persistence.TempTable.class);
+		sourceCodeManager
+				.addClasses(com.follett.fsc.core.framework.persistence.adjusters.DistinctAdjuster.class);
 
 		String[] columns = { SisDataTable.COL_CLASS_NAME };
 		ColumnQuery query = new ColumnQuery(SisDataTable.class, columns,
