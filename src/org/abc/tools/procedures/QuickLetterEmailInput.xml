@@ -1,0 +1,12 @@
+ <tool-input> 
+   <input name="queryBy" data-type="integer" display-type="select" display-name="report.shared.query">
+     <option value="0" display-name="report.shared.query.currentSelection"/>
+     <option value="1" display-name="report.shared.query.recordSet" />
+     <disable input-name="queryString" if-parent-equals="0" />
+   </input>
+   <input name="queryString" data-type="string" display-type="text" display-name="report.shared.queryString"/>
+   <input name="email-subject" data-type="string" display-type="text" display-name="Email Subject" required="true" default-value="Aspen Notification" /> 
+   <input name="email-include-student" data-type="boolean" display-type="checkbox" display-name="Email Students" default-value="false" /> 
+   <input name="email-include-contacts" data-type="boolean" display-type="checkbox" display-name="Email Contacts" default-value="false" /> 
+   <input name="email-recipient" data-type="string" display-type="text" display-name="Optional Recipient" required="false" default-value="" /> 
+ </tool-input>
