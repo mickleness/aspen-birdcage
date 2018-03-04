@@ -140,7 +140,15 @@ public class BundleWriter {
 				String javaEntryName = c.getCanonicalName().replace(".", "/")
 						+ ".java";
 				zipOut.putNextEntry(new ZipEntry(javaEntryName));
-				Breakout breakout = new Breakout(context, javaFile);
+				Breakout breakout = new Breakout(context, javaFile) {
+
+					@Override
+					protected boolean isJarSearchable(File jarFile) {
+						String name = jarFile.getName().toLowerCase();
+						return super.isJarSearchable(jarFile)
+								&& !(name.contains("xr") || name.contains("lt"));
+					}
+				};
 				// TODO: it'd be great if we compiled the java source code
 				// against aspen xr and verified it was compiler-error-free
 				javaSource = breakout.toString();

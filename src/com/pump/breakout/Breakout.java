@@ -695,37 +695,47 @@ public class Breakout {
 		if (javaSourceFromJars == null) {
 			javaSourceFromJars = new HashMap<>();
 			for (File jarFile : context.getJars().values()) {
-				try (FileInputStream fileIn = new FileInputStream(jarFile)) {
-					try (JarInputStream jarIn = new JarInputStream(fileIn)) {
-						JarEntry entry = jarIn.getNextJarEntry();
-						while (entry != null) {
-							String name = entry.getName();
-							if (name.endsWith(".java")) {
-								name = name.substring(0, name.length()
-										- ".java".length());
-								name = name.replace('/', '.');
+				if (isJarSearchable(jarFile)) {
+					try (FileInputStream fileIn = new FileInputStream(jarFile)) {
+						try (JarInputStream jarIn = new JarInputStream(fileIn)) {
+							JarEntry entry = jarIn.getNextJarEntry();
+							while (entry != null) {
+								String name = entry.getName();
+								if (name.endsWith(".java")) {
+									name = name.substring(0, name.length()
+											- ".java".length());
+									name = name.replace('/', '.');
 
-								byte[] bytes = read(jarIn);
+									byte[] bytes = read(jarIn);
 
-								String filename = entry.getName();
-								filename = filename.substring(filename
-										.lastIndexOf('/') + 1);
+									String filename = entry.getName();
+									filename = filename.substring(filename
+											.lastIndexOf('/') + 1);
 
-								javaSourceFromJars.put(
-										classname,
-										new ByteInputStreamFactory(jarFile
-												.getAbsolutePath()
-												+ ":"
-												+ entry.getName(), bytes,
-												filename));
+									javaSourceFromJars.put(
+											name,
+											new ByteInputStreamFactory(jarFile
+													.getAbsolutePath()
+													+ ":"
+													+ entry.getName(), bytes,
+													filename));
+								}
+								entry = jarIn.getNextJarEntry();
 							}
-							entry = jarIn.getNextJarEntry();
 						}
 					}
 				}
 			}
 		}
 		return javaSourceFromJars.get(classname);
+	}
+
+	/**
+	 * Return true if this jar file is a potential resource we should consider
+	 * for java files.
+	 */
+	protected boolean isJarSearchable(File jarFile) {
+		return true;
 	}
 
 	private byte[] read(InputStream in) throws IOException {
