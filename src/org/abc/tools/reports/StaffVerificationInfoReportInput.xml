@@ -1,0 +1,43 @@
+<!-- ********************************************************** -->
+<!-- MODIFIED FROM THE "STAFF LIST" AND RELATED REPORTS -->
+<!-- ********************************************************** -->
+
+<tool-input allow-school-select="true" context="com.x2dev.sis.model.beans.SisStaff">
+
+ <!-- ************** -->
+ <!-- SELECT OPTIONS -->
+ <!-- ************** -->
+
+ <input name="queryBy" data-type="string" display-type="select" display-name="report.shared.query.staff">
+  <option value="##current" display-name="report.shared.query.currentSelection" context-dependent="true"/>
+  <option value="##all" display-name="report.shared.query.all"/>
+ </input>
+
+ <!-- ************ -->
+ <!-- SORT OPTIONS -->
+ <!-- ************ -->
+
+ <input name="sort" data-type="string" display-type="select" display-name="report.shared.sort">
+  <option value="##current" display-name="report.shared.sort.currentSort" context-dependent="true"/>
+  <option value="nameView" display-name="report.shared.sort.name"/>
+  <option value="departmentCode, nameView" display-name="report.shared.sort.department"/>
+ </input>
+
+ <!-- *********** -->
+ <!-- ACTIVE-ONLY -->
+ <!-- *********** -->
+
+ <input name="activeOnly" data-type="boolean" display-type="checkbox" display-name="report.shared.activeStaffOnly" default-value="true"/>
+
+ <!-- *************** -->
+ <!-- GROUP BY SCHOOL -->
+ <!-- *************** -->
+
+ <input name="groupBySchool" data-type="boolean" display-type="checkbox" display-name="report.shared.groupBy.school" default-value="true"/>
+
+ <input name="emailPdf" data-type="boolean" display-type="checkbox" display-name="Email Staff" default-value="false"/>
+
+ 
+
+</tool-input>
+<!-- ++++ Upgraded by PhoenixUpgradeProcedure ++++ on Mon Oct 31 16:30:36 EDT 2011 -->
