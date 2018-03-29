@@ -1,15 +1,17 @@
 package org.abc.tools;
 
-import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.jar.JarInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -82,36 +84,36 @@ public class BundleWriter {
 	public void run() throws Exception {
 		if (tools != null && tools.length > 0) {
 			for (Class c : tools) {
-				run(c, tools.length == 1);
+				run(c);
 			}
 		} else {
 			for (String classname : context.getClassNames()) {
 				Class c = Class.forName(classname);
-				run(c, false);
+				run(c);
 			}
 		}
 	}
 
-	protected void run(Class c, boolean copyToClipboard) throws Exception {
+	protected void run(Class c) throws Exception {
 		Tool tool = (Tool) c.getAnnotation(Tool.class);
 		if (tool != null) {
 			String javaSource = writeBundle(c, tool.id(), tool.name(),
-					tool.input(), tool.category(), tool.nodes(),
-					!copyToClipboard);
-			if (copyToClipboard) {
-				StringSelection selection = new StringSelection(javaSource);
-				Toolkit.getDefaultToolkit().getSystemClipboard()
-						.setContents(selection, selection);
-				System.out.println(javaSource);
-			}
+					tool.input(), tool.jrxml(), tool.category(), tool.weight(),
+					tool.comment(), tool.schedulable(), tool.disableAutokill(),
+					tool.allowOverride(), tool.engineVersion(),
+					tool.sequenceNumber(), tool.nodes());
 		}
 	}
 
 	private String writeBundle(Class c, String toolID, String toolName,
-			String inputXML, String category, String[] nodes, boolean output)
+			String inputXML, String jrxmlFilename, String category,
+			String weight, String comment, String schedulable,
+			boolean disableAutokill, boolean allowOverride,
+			String engineVersion, String sequenceNumber, String[] nodes)
 			throws Exception {
 		File javaFile = context.getJavaFile(c.getName());
 		File inputXMLFile = null;
+		File jrxmlFile = null;
 
 		if (inputXML != null && !inputXML.isEmpty()) {
 			inputXMLFile = new File(javaFile.getParentFile(), inputXML);
@@ -125,21 +127,23 @@ public class BundleWriter {
 			inputXMLFile = null;
 		}
 
+		if (jrxmlFilename != null && !jrxmlFilename.isEmpty()) {
+			jrxmlFile = new File(javaFile.getParentFile(), jrxmlFilename);
+			if (!jrxmlFile.exists()) {
+				throw new IllegalArgumentException("For tool \"" + c.getName()
+						+ ", the design file \"" + jrxmlFilename
+						+ "\", was requested, but the file "
+						+ jrxmlFile.getAbsolutePath() + " does not exist.");
+			}
+		} else {
+			jrxmlFile = null;
+		}
+
 		Charset charset = Charset.forName("UTF-8");
 		File target = new File(targetDir, toolName + ".bundle");
 		String javaSource;
 		try (FileOutputStream fileOut = new FileOutputStream(target)) {
 			try (ZipOutputStream zipOut = new ZipOutputStream(fileOut)) {
-				String inputXMLFilename = inputXMLFile == null ? null
-						: inputXMLFile.getName();
-				String bundleXml = createBundleXml(c, toolID, toolName,
-						inputXMLFilename, category, nodes);
-				zipOut.putNextEntry(new ZipEntry("bundle-definition.xml"));
-				zipOut.write(bundleXml.getBytes(charset));
-
-				String javaEntryName = c.getCanonicalName().replace(".", "/")
-						+ ".java";
-				zipOut.putNextEntry(new ZipEntry(javaEntryName));
 				Breakout breakout = new Breakout(context, javaFile) {
 
 					@Override
@@ -152,6 +156,24 @@ public class BundleWriter {
 				// TODO: it'd be great if we compiled the java source code
 				// against aspen xr and verified it was compiler-error-free
 				javaSource = breakout.toString();
+
+				boolean includeCustomizationsJar = javaSource
+						.contains("com.follett.cust.");
+
+				String inputXMLFilename = inputXMLFile == null ? null
+						: inputXMLFile.getName();
+				String bundleXml = createBundleXml(c, toolID, toolName,
+						inputXMLFilename, jrxmlFilename, category, weight,
+						comment, schedulable, disableAutokill, allowOverride,
+						engineVersion, sequenceNumber, nodes,
+						includeCustomizationsJar);
+				zipOut.putNextEntry(new ZipEntry("bundle-definition.xml"));
+				zipOut.write(bundleXml.getBytes(charset));
+
+				String javaEntryName = c.getCanonicalName().replace(".", "/")
+						+ ".java";
+				zipOut.putNextEntry(new ZipEntry(javaEntryName));
+
 				zipOut.write(javaSource.getBytes(charset));
 
 				if (inputXMLFilename != null) {
@@ -161,16 +183,64 @@ public class BundleWriter {
 					zipOut.putNextEntry(new ZipEntry(xmlEntryName));
 					IOUtils.write(inputXMLFile, zipOut);
 				}
+				if (jrxmlFile != null) {
+					String jrxmlEntryName = javaEntryName.substring(0,
+							javaEntryName.lastIndexOf("/") + 1) + jrxmlFilename;
+					zipOut.putNextEntry(new ZipEntry(jrxmlEntryName));
+					IOUtils.write(jrxmlFile, zipOut);
+				}
+				if (includeCustomizationsJar) {
+					CustomizationsJar cj = getCustomizationsJar();
+					zipOut.putNextEntry(new ZipEntry(cj.file.getName()));
+					IOUtils.write(cj.file, zipOut);
+				}
 			}
 		}
-		if (output)
-			System.out.println("Wrote " + target.getAbsolutePath() + " ("
-					+ IOUtils.formatFileSize(target) + ")");
+		System.out.println("Wrote " + target.getAbsolutePath() + " ("
+				+ IOUtils.formatFileSize(target) + ")");
 		return javaSource;
 	}
 
+	static class CustomizationsJar {
+		public final File file;
+		public final String id;
+
+		public CustomizationsJar(File file) {
+			this.file = file;
+			Collection<String> ids = new HashSet<>();
+			try (FileInputStream fileIn = new FileInputStream(file)) {
+				try (JarInputStream jarIn = new JarInputStream(fileIn)) {
+					String k = (String) jarIn.getManifest().getMainAttributes()
+							.getValue("JarPlugin-ID");
+					if (k != null)
+						ids.add(k);
+				}
+			} catch (Throwable t) {
+				throw new RuntimeException(t);
+			}
+			if (ids.size() != 1)
+				throw new IllegalArgumentException();
+			id = ids.iterator().next();
+		}
+	}
+
+	private CustomizationsJar getCustomizationsJar() {
+		for (File jar : context.getJars().values()) {
+			try {
+				CustomizationsJar cj = new CustomizationsJar(jar);
+				return cj;
+			} catch (Exception e) {
+			}
+		}
+		throw new RuntimeException("The customizations jar was not found.");
+	}
+
 	private String createBundleXml(Class c, String toolID, String toolName,
-			String inputXMLFilename, String category, String[] nodes) {
+			String inputXMLFilename, String jrxmlFilename, String category,
+			String weight, String comment, String schedulable,
+			boolean disableAutokill, boolean allowOverride,
+			String engineVersion, String sequenceNumber, String[] nodes,
+			boolean includeCustomizationsJar) {
 
 		// TODO: it'd be great if we validated this XML, too. There's a lot that
 		// we're injecting that could be either bad XML, or violate the tool
@@ -199,8 +269,31 @@ public class BundleWriter {
 		if (inputXMLFilename != null && inputXMLFilename.length() > 0) {
 			sb.append(" input-file=\"" + inputXMLFilename + "\"");
 		}
+		if (jrxmlFilename != null && jrxmlFilename.length() > 0) {
+			sb.append(" design-file=\"" + jrxmlFilename + "\"");
+		}
 		if (category != null && category.length() > 0) {
 			sb.append(" category=\"" + category + "\"");
+		}
+		if (weight != null && weight.length() > 0) {
+			sb.append(" weight=\"" + weight + "\"");
+		}
+		if (comment != null && comment.length() > 0) {
+			sb.append(" comment=\"" + comment + "\"");
+		}
+		if (schedulable != null && schedulable.length() > 0) {
+			sb.append(" schedulable=\"" + schedulable + "\"");
+		}
+		if (sequenceNumber != null && sequenceNumber.length() > 0) {
+			sb.append(" sequence-number=\"" + sequenceNumber + "\"");
+		}
+		if (includeCustomizationsJar) {
+			sb.append(" jar-plugin-path=\"" + getCustomizationsJar().id + "\"");
+		}
+		sb.append(" disable-autokill=\"" + disableAutokill + "\"");
+		sb.append(" allow-override=\"" + allowOverride + "\"");
+		if (type == ToolType.REPORT) {
+			sb.append(" engine-version=\"" + engineVersion + "\"");
 		}
 
 		if (nodeList.size() == 0) {

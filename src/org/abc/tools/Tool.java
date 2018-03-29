@@ -22,6 +22,14 @@ public @interface Tool {
 	 */
 	String type() default "";
 
+	boolean disableAutokill() default false;
+
+	boolean allowOverride() default false;
+
+	String engineVersion() default "5.5.0";
+
+	String sequenceNumber() default "0";
+
 	/**
 	 * This optional attribute identifies the filename of the XML file
 	 * containing the input parameters.
@@ -29,9 +37,32 @@ public @interface Tool {
 	String input() default "";
 
 	/**
+	 * This optional attribute identifies the filename of the jrxml file used to
+	 * format reports. This is not needed/appropriate for
+	 * imports/exports/procedures, but it may be required for reports.
+	 */
+	String jrxml() default "";
+
+	/**
 	 * This optional attribute identifies the category of the tool.
 	 */
 	String category() default "";
+
+	/**
+	 * This optional attribute identifies the weight of the tool.
+	 */
+	String weight() default "";
+
+	/**
+	 * This optional attribute identifies the comment of the tool.
+	 */
+	String comment() default "";
+
+	/**
+	 * This optional attribute identifies the schedulable (a boolean) of the
+	 * tool.
+	 */
+	String schedulable() default "";
 
 	/**
 	 * This optional attribute returns an array of the nodes to write in the
