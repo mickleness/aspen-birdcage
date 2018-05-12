@@ -88,6 +88,10 @@ public class BundleWriter {
 			}
 		} else {
 			for (String classname : context.getClassNames()) {
+				File javaFile = context.getJavaFile(classname);
+				if(javaFile.getAbsolutePath().contains(File.separator+"test"+File.separator))
+					continue;
+				
 				Class c = Class.forName(classname);
 				run(c);
 			}
