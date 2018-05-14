@@ -1,0 +1,33 @@
+<!-- ************************************************************************** -->
+<!-- INPUT DEFINITION FOR THE "HAVERHILL ALERT NOW" EXPORTS AND RELATED REPORTS -->
+<!-- ************************************************************************** -->
+
+<tool-input allow-school-select="true" district-support="true">
+
+ <!-- ************** -->
+ <!-- SELECT OPTIONS -->
+ <!-- ************** -->
+
+ <input name="queryBy" data-type="string" display-type="select" display-name="report.shared.query">
+  <option value="##all" display-name="report.shared.query.all"/>
+  <option value="yog" display-name="report.shared.query.yog"/>
+  <option value="homeroom" display-name="report.shared.query.homeroom"/>
+  <disable input-name="queryString" if-parent-equals="##all" />
+ </input>
+ <input name="queryString" data-type="string" display-type="text" display-name="report.shared.queryString"/>
+
+ <!-- *********** -->
+ <!-- ACTIVE-ONLY -->
+ <!-- *********** -->
+
+ <input name="activeOnly" data-type="boolean" display-type="checkbox" display-name="report.shared.activeStudentsOnly" default-value="true"/>
+ 
+ <input name="exportFileType" data-type="string" display-type="select" display-name="File Type" default-value="xls" required="true">
+  <option value="csv" display-name="CSV" />
+  <option value="html" display-name="HTML" />
+  <option value="json" display-name="JSON" />
+  <option value="xls" display-name="XLS" />
+  <option value="zip" display-name="ZIP" />
+</input>
+ 
+</tool-input>
