@@ -12,25 +12,29 @@ import java.awt.TexturePaint;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Point2D;
-import java.awt.geom.RectangularShape;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
-import javax.activation.DataSource;
-import javax.imageio.ImageIO;
-
+import org.apache.commons.lang3.StringUtils;
+import org.apache.ojb.broker.query.Criteria;
+import org.apache.ojb.broker.query.QueryByCriteria;
+import org.apache.struts.util.MessageResources;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.CategoryAxis;
@@ -38,32 +42,44 @@ import org.jfree.chart.axis.CategoryLabelPositions;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PlotOrientation;
-import org.jfree.chart.renderer.category.BarPainter;
 import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
-import org.jfree.ui.RectangleEdge;
 
 import com.follett.fsc.core.framework.persistence.BeanQuery;
+import com.follett.fsc.core.framework.persistence.ColumnQuery;
 import com.follett.fsc.core.framework.persistence.X2Criteria;
-import com.follett.fsc.core.k12.beans.QueryIterator;
+import com.follett.fsc.core.k12.beans.OrganizationLocale;
+import com.follett.fsc.core.k12.beans.Report;
+import com.follett.fsc.core.k12.beans.ReportQueryIterator;
+import com.follett.fsc.core.k12.beans.Student;
+import com.follett.fsc.core.k12.beans.StudentContact;
+import com.follett.fsc.core.k12.beans.X2BaseBean;
+import com.follett.fsc.core.k12.business.ModelBroker;
 import com.follett.fsc.core.k12.business.PreferenceManager;
+import com.follett.fsc.core.k12.business.localization.LocalizationCache;
 import com.follett.fsc.core.k12.tools.reports.ReportDataGrid;
-import com.x2dev.reports.portable.AttendanceWarningLetterData;
+import com.follett.fsc.core.k12.tools.reports.ReportJavaSourceNet;
+import com.follett.fsc.core.k12.tools.reports.ReportUtils;
+import com.follett.fsc.core.k12.web.AppGlobals;
+import com.follett.fsc.core.k12.web.ContextList;
+import com.follett.fsc.core.k12.web.UserDataContainer;
+import com.x2dev.sis.model.beans.SisDataFieldConfig;
+import com.x2dev.sis.model.beans.SisOrganization;
 import com.x2dev.sis.model.beans.SisSchool;
 import com.x2dev.sis.model.beans.SisStudent;
 import com.x2dev.sis.model.beans.StudentAttendance;
+import com.x2dev.sis.model.beans.StudentEventTracking;
 import com.x2dev.sis.model.beans.path.SisBeanPaths;
 import com.x2dev.utils.DateUtils;
-import com.x2dev.utils.KeyValuePair;
 import com.x2dev.utils.LoggerUtils;
+import com.x2dev.utils.converters.Converter;
 import com.x2dev.utils.types.PlainDate;
+
+import com.x2dev.utils.converters.ConverterFactory;
 
 import net.sf.jasperreports.engine.JRDataSource;
 
 public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
-
-	private static final long serialVersionUID = 1L;
-    public static final String COL_COMPARISON_CHART_PNG = "comparisonChartPng";
 
     enum Month {
     	January, February, March, April, May, June, July, August, September, October, November, December;
@@ -74,12 +90,19 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
 			return Month.values()[gc.get(GregorianCalendar.MONTH)];
 		}
     }
+	
+	static class AbsenceComparison {
+		int studentAbsences = 0;
+		double peerAbsences = 0;
+	}
+
+	private static final long serialVersionUID = 1L;
+    public static final String COL_COMPARISON_CHART_PNG = "comparisonChart";
     
     String activeCode;
     PlainDate endDate;
     PlainDate startDate;
     boolean excludeExcused;
-    boolean includeAll;
 
 	@Override
 	protected JRDataSource gatherData() {
@@ -87,31 +110,99 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
         endDate = (PlainDate) getParameter(END_DATE_PARAM);
         startDate = (PlainDate) getParameter(START_DATE_PARAM);
         excludeExcused = ((Boolean) getParameter(EXCLUDE_EXCUSED_PARAM)).booleanValue();
-        includeAll = ((Boolean) getParameter(INCLUDE_ALL_PARAM)).booleanValue();
         
 		ReportDataGrid data = (ReportDataGrid) super.gatherData();
+		Map<SisStudent, Map<String, Object>> stdToRowMap = new HashMap<>();
+		Map<String, Map<String, Collection<SisStudent>>> sklToGradeLevelToStdMap = new HashMap<>();
 		for(Map<String, Object> map : data.getRows()) {
 			SisStudent std = (SisStudent) map.get(COL_STUDENT);
-			LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap = getStudentComparisonMap(std);
-			if(comparisonMap!=null) {
-				JFreeChart chart = createChart(comparisonMap, std.getPerson().getFirstName());
-				try {
-					Class rendererClass = Class.forName("net.sf.jasperreports5.renderers.JFreeChartRenderer");
-					Object renderer = rendererClass.getConstructor(JFreeChart.class).newInstance(chart);
-					map.put(COL_COMPARISON_CHART_PNG, renderer);
-				} catch(Exception e) {
-					logToolMessage(Level.WARNING, LoggerUtils.convertThrowableToString(e), false);
+			stdToRowMap.put(std, map);
+			
+			String sklOid = std.getSchoolOid();
+			String gradeLevel = std.getGradeLevel();
+			if(!StringUtils.isEmpty(sklOid) && !StringUtils.isEmpty(gradeLevel)) {
+				Map<String, Collection<SisStudent>> gradeLevelMap = sklToGradeLevelToStdMap.get(sklOid);
+				if(gradeLevelMap==null) {
+					gradeLevelMap = new HashMap<>();
+					sklToGradeLevelToStdMap.put(sklOid, gradeLevelMap);
+				}
+				Collection<SisStudent> students = gradeLevelMap.get(gradeLevel);
+				if(students==null) {
+					students = new HashSet<>();
+					gradeLevelMap.put(gradeLevel, students);
+				}
+				students.add(std);
+			}
+		}
+
+		for(Entry<String, Map<String, Collection<SisStudent>>> sklToGradeLevelToStdEntry : sklToGradeLevelToStdMap.entrySet()) {
+			String sklOid = sklToGradeLevelToStdEntry.getKey();
+			
+			Map<String, Collection<SisStudent>> studentsByGradeLevel = sklToGradeLevelToStdEntry.getValue();
+			for(Entry<String, Collection<SisStudent>> studentsByGradeLevelEntry : studentsByGradeLevel.entrySet()) {
+				String gradeLevel = studentsByGradeLevelEntry.getKey();
+				
+				X2Criteria studentCountCriteria = new X2Criteria();
+		        studentCountCriteria.addEqualTo(SisStudent.COL_GRADE_LEVEL, gradeLevel);
+		        studentCountCriteria.addEqualTo(SisStudent.COL_SCHOOL_OID, sklOid);
+		        studentCountCriteria.addEqualTo(SisStudent.COL_ENROLLMENT_STATUS, activeCode);
+		        BeanQuery studentCountQuery = new BeanQuery(SisStudent.class, studentCountCriteria);
+		        int gradeLevelSize = getBroker().getCount(studentCountQuery);
+
+				X2Criteria attendanceCriteria = new X2Criteria();
+				attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().gradeLevel().toString(), gradeLevel);
+				attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().schoolOid().toString(), sklOid);
+				attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().enrollmentStatus().toString(), activeCode);
+				attendanceCriteria.addGreaterOrEqualThan(SisBeanPaths.STUDENT_ATTENDANCE.date().toString(), startDate);
+				attendanceCriteria.addLessOrEqualThan(SisBeanPaths.STUDENT_ATTENDANCE.date().toString(), endDate);
+				if(excludeExcused) {
+					attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.excusedIndicator().toString(), Boolean.FALSE);
+				}
+				
+				BeanQuery attendanceQuery = new BeanQuery(StudentAttendance.class, attendanceCriteria);			
+				Map<PlainDate, Map<String, StudentAttendance>> atts = getBroker().getNestedMapByQuery(attendanceQuery, StudentAttendance.COL_DATE, StudentAttendance.COL_OID, 10, 10);
+
+				for(SisStudent std : studentsByGradeLevelEntry.getValue()) {
+					LinkedHashMap<Month, AbsenceComparison> absencesByMonth = new LinkedHashMap<>();
+					for(PlainDate date = startDate; date.compareTo(endDate)<=0; date = DateUtils.add(date, 1)) {
+						Month month = Month.getMonth(date);
+						AbsenceComparison absenceInfo = absencesByMonth.get(month);
+						if(absenceInfo==null) {
+							absenceInfo = new AbsenceComparison();
+							absencesByMonth.put(month, absenceInfo);
+						}
+						
+						Map<String, StudentAttendance> attsForDate = atts.get(date);
+						if(attsForDate!=null) {
+							for(StudentAttendance att : attsForDate.values()) {
+								if(std.getOid().equals(att.getStudentOid())) {
+									absenceInfo.studentAbsences++;
+								}
+								absenceInfo.peerAbsences += 1.0 / ((double)gradeLevelSize);
+							}
+						}
+					}
+					
+					JFreeChart chart = createChart(absencesByMonth, std.getPerson().getFirstName());
+					try {
+						Class rendererClass = Class.forName("net.sf.jasperreports5.renderers.JFreeChartRenderer");
+						Object renderer = rendererClass.getConstructor(JFreeChart.class).newInstance(chart);
+						stdToRowMap.get(std).put(COL_COMPARISON_CHART_PNG, renderer);
+					} catch(Exception e) {
+						logToolMessage(Level.WARNING, LoggerUtils.convertThrowableToString(e), false);
+					}
 				}
 			}
 		}
+
 		return data;
 	}
 
-	private JFreeChart createChart(LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap,String studentFirstName) {
+	private JFreeChart createChart(LinkedHashMap<Month, AbsenceComparison> comparisonMap,String studentFirstName) {
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
-        for(Entry<Month, KeyValuePair<Integer, Double>> entry : comparisonMap.entrySet()) {
-        	dataset.addValue( entry.getValue().getKey().doubleValue(), studentFirstName, entry.getKey());
-        	dataset.addValue( entry.getValue().getValue().doubleValue(), "Peers", entry.getKey());
+        for(Entry<Month, AbsenceComparison> entry : comparisonMap.entrySet()) {
+        	dataset.addValue( entry.getValue().studentAbsences, studentFirstName, entry.getKey());
+        	dataset.addValue( entry.getValue().peerAbsences, "Peers", entry.getKey());
         }
 	    
         JFreeChart chart = ChartFactory.createBarChart(
@@ -125,43 +216,20 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
             false                     // URLs?
         );
 
-        // set the background color for the chart...
-        //chart.setBackgroundPaint(Color.white);
-
-        // get a reference to the plot for further customisation...
         final CategoryPlot plot = chart.getCategoryPlot();
         plot.setRangeGridlinePaint(Color.black);
         plot.setBackgroundPaint(Color.white);
-//        plot.setDomainGridlinePaint(Color.white);
-//        plot.setRangeGridlinePaint(Color.white);
 
-        // set the range axis to display integers only...
         final NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
         rangeAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
         
-        // set up gradient paints for series...
         final BarRenderer renderer = (BarRenderer) plot.getRenderer();
-        
-        renderer.setBarPainter(new BarPainter() {
-
-			@Override
-			public void paintBar(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base) {
-				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-				g2.setPaint(renderer.getSeriesPaint(row));
-				g2.fill(bar);
-				g2.setStroke(new BasicStroke(1));
-				g2.setColor(Color.black);
-				g2.draw(bar);
-			}
-
-			@Override
-			public void paintBarShadow(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base, boolean pegShadow) {
-				// unimplemented
-			}
-        	
-        });
         renderer.setSeriesPaint(0, ImageUtils.createStripedPaint(10, 3, 1, true));
         renderer.setSeriesPaint(1, ImageUtils.createDottedPaint(10, 5, 10));
+        renderer.setSeriesOutlinePaint(0, Color.black);
+        renderer.setSeriesOutlinePaint(1, Color.black);
+        renderer.setDrawBarOutline(true);
+        renderer.setShadowVisible(false);
 
         final CategoryAxis domainAxis = plot.getDomainAxis();
         domainAxis.setCategoryLabelPositions(
@@ -171,79 +239,6 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
 		chart.setTextAntiAlias(true);
 		
         return chart;
-	}
-
-	private LinkedHashMap<Month, KeyValuePair<Integer, Double>> getStudentComparisonMap(SisStudent std) {
-		SisSchool skl = std.getSchool();
-		if(skl==null)
-			return null;
-		
-		X2Criteria studentCountCriteria = new X2Criteria();
-        studentCountCriteria.addEqualTo(SisStudent.COL_GRADE_LEVEL, std.getGradeLevel());
-        studentCountCriteria.addEqualTo(SisStudent.COL_SCHOOL_OID, std.getSchoolOid());
-        studentCountCriteria.addEqualTo(SisStudent.COL_ENROLLMENT_STATUS, activeCode);
-        studentCountCriteria.addNotEqualTo(SisStudent.COL_OID, std.getOid());
-        BeanQuery studentCountQuery = new BeanQuery(SisStudent.class, studentCountCriteria);
-        double studentCount = getBroker().getCount(studentCountQuery);
-        
-		X2Criteria thisStudentCriteria = new X2Criteria();
-		thisStudentCriteria.addEqualTo(StudentAttendance.COL_STUDENT_OID, std.getOid());
-
-		X2Criteria peersCriteria = new X2Criteria();
-		peersCriteria.addNotEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.studentOid().toString(), std.getOid());
-		peersCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().gradeLevel().toString(), std.getGradeLevel());
-		peersCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().enrollmentStatus().toString(), activeCode);
-		
-		Map<Month, Integer> peerAbsencesMap = getStudentAttendancesByMonth(skl.getOid(), startDate, endDate, peersCriteria);
-		Map<Month, Integer> studentAbsenceMap = getStudentAttendancesByMonth(skl.getOid(), startDate, endDate, thisStudentCriteria);
-		
-		LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap = new LinkedHashMap<>();
-		for(PlainDate date = startDate; date.compareTo(endDate)<0; date = DateUtils.add(date, 1)) {
-			Month month = Month.getMonth(date);
-			if(!comparisonMap.containsKey(month)) {
-				Number peerAbsences = peerAbsencesMap.get(month);
-				Double peerAbsenceAverage;
-				if(peerAbsences==null) {
-					peerAbsenceAverage = Double.valueOf(0);
-				} else {
-					peerAbsenceAverage = Double.valueOf(peerAbsences.doubleValue() / studentCount);
-				}
-				
-				Number stdAbsences = studentAbsenceMap.get(month);
-				if(stdAbsences==null)
-					stdAbsences = Integer.valueOf(0);
-				comparisonMap.put(month, new KeyValuePair<>(Integer.valueOf(stdAbsences.intValue()), peerAbsenceAverage));
-			}
-		}
-        return comparisonMap;
-	}
-
-	protected Map<Month, Integer> getStudentAttendancesByMonth(String sklOid, PlainDate startDate, PlainDate endDate, X2Criteria criteria) {
-		Map<Month, AtomicInteger> returnValue = new HashMap<>();
-		
-		criteria.addEqualTo(StudentAttendance.COL_SCHOOL_OID, sklOid);
-		criteria.addGreaterOrEqualThan(StudentAttendance.COL_DATE, startDate);
-		criteria.addLessOrEqualThan(StudentAttendance.COL_DATE, endDate);
-		//criteria.addEqualTo(StudentAttendance.COL_ABSENT_INDICATOR, Boolean.TRUE);
-		if(excludeExcused) {
-			criteria.addEqualTo(StudentAttendance.COL_EXCUSED_INDICATOR, Boolean.FALSE);
-		}
-		
-		BeanQuery q = new BeanQuery(StudentAttendance.class, criteria);
-		try(QueryIterator iter = getBroker().getIteratorByQuery(q)) {
-			while(iter.hasNext()) {
-				StudentAttendance att = (StudentAttendance) iter.next();
-				Month month = Month.getMonth(att.getDate());
-				AtomicInteger sum = returnValue.get(month);
-				if(sum==null) {
-					sum = new AtomicInteger(0);
-					returnValue.put(month, sum);
-				}
-				sum.incrementAndGet();
-			}
-		}
-		
-		return (Map) returnValue;
 	}
 }
 
@@ -298,4 +293,661 @@ class ImageUtils {
 		}
 		return paint;
 	}
+}
+
+/**
+ * This is copied and pasted from the portable AttendanceWarningLetterData class. It's branched here
+ * primarily to avoid the risk if Follett updates that class and then someone imports the revised
+ * class above: they shouldn't lose Follett's updated code.
+ * <p>
+ * Prepares the data for PORTABLE REPORTS PROJECT "Attendance Warning Letter" report. This report
+ * lists the
+ * student attendance matching the total criteria within the entered date range. It also creates
+ * StudentEventTracking records for the students receiving letters.
+ * <p>
+ * This report takes the following consideration in the SQL based on the wording of the letter
+ * are:
+ * <ul>
+ * <li>SQL will always query for students who have greater than the parameterized absences
+ * (irrespective of Student Event records)
+ * </ul>
+ *
+ * @author Follett School Solutions
+ */
+class AttendanceWarningLetterData extends ReportJavaSourceNet {
+    /**
+     * Name for the "end date" report parameter. The value is a PlainDate.
+     */
+    public static final String END_DATE_PARAM = "endDate";
+
+    /**
+     * Name for the "exclude excused absences" report parameter. The value is a Boolean.
+     */
+    public static final String EXCLUDE_EXCUSED_PARAM = "excludeExcused";
+
+    /**
+     * Name for the "include students with previous mailing" report parameter. The value is a
+     * Boolean.
+     */
+    public static final String INCLUDE_ALL_PARAM = "includeAll";
+
+    /**
+     * Name for the "include students with previous mailing" report parameter. The value is a
+     * Boolean.
+     */
+    public static final String GENERATE_EVENTS_PARAM = "generateEvents";
+
+    /**
+     * Name for the "Minimum absences" report parameter. The value is an integer.
+     */
+    public static final String MINIMUM_ABSENCES_PARAM = "minimumAbsences";
+
+    /**
+     * Name for the "multiple mailings" report parameter. The value is a Boolean.
+     */
+    public static final String MULTIPLE_MAILINGS_PARAM = "multipleMailings";
+
+    /**
+     * Name for the "sort" report parameter. The value is an Integer.
+     */
+    public static final String SORT_PARAM = "sort";
+
+    /**
+     * Name for the "start date" report parameter. The value is a PlainDate.
+     */
+    public static final String START_DATE_PARAM = "startDate";
+
+    /**
+     * Name for the "eventComment" report parameter. The value is a String.
+     */
+    public static final String EVENT_COMMENT_PARAM = "eventComment";
+
+    /**
+     * Name for the "eventPrefix" parameter. Value is a String.
+     */
+    public static final String EVENT_NAME_PARAM = "eventPrefix";
+
+    /**
+     * Name for the "numbersToWords" parameter for portability. Value is a String.
+     */
+    public static final String NUMBERS_TO_WORDS_PARAM = "numbersToWords";
+
+    /**
+     * Name for the "includeChartBar" parameter. Value is a boolean.
+     */
+    public static final String PRINT_CHART_BAR_PARAM = "printChartBar";
+
+    /**
+     * Name for the "categories" parameter. Value is a String.
+     */
+    public static final String CHART_BAR_CATEGORIES_PARAM = "categories";
+
+    /**
+     * Name for the "series" parameter. Value is a String.
+     */
+    public static final String CHART_BAR_SERIES_PARAM = "series";
+
+    // private static final String EVENT_PREFIX = "Attendance Failure Warning Letter - 4 Days";
+
+    /**
+     * Grid fields
+     */
+    public static final String COL_ABSENT_TOTAL = "absences";
+    public static final String COL_ADDRESS = "address";
+    public static final String COL_STUDENT = "student";
+    public static final String COL_PRINT_CHART = "printChartBar";
+    public static final String COL_CHART_FORMAT = "chartFormat";
+    public static final String COL_CHART_DATA = "chartData";
+    public static final String COL_SUMMARY_FORMAT = "summaryFormat";
+    public static final String COL_SUMMARY_DATA = "summaryData";
+
+    /**
+     * Chart Grid fields
+     */
+    public static final String COL_CATEGORY = "categoryField";
+    public static final String COL_SERIES = "seriesField";
+    public static final String COL_COUNT = "countField";
+    public static final String COL_TOTAL_COUNT = "totalCount";
+
+    /**
+     * Grid parameters
+     */
+    public static final String CATEGORY = "category";
+    public static final String SERIES = "series";
+
+    /**
+     * Sub Report IDs
+     */
+    public static final String SUB_CHART_REPORT_ID = "FSS-ATT-008-SUB-C";
+    public static final String SUB_CHART_SUMMARY_REPORT_ID = "FSS-ATT-008-SUB-S";
+
+    // m_variables
+    private Map m_studentContacts;
+    private Map m_studentEvents;
+    private String m_studentOid;
+    private String m_eventName;
+
+    /**
+     * arrays used to convert numbers into English word for future portability reasons
+     */
+    private static final String[] TENS_NAMES =
+            {
+                    "",
+                    " ten",
+                    " twenty",
+                    " thirty",
+                    " forty",
+                    " fifty",
+                    " sixty",
+                    " seventy",
+                    " eighty",
+                    " ninety"
+            };
+
+    private static final String[] NUM_NAMES =
+            {
+                    "",
+                    " one",
+                    " two",
+                    " three",
+                    " four",
+                    " five",
+                    " six",
+                    " seven",
+                    " eight",
+                    " nine",
+                    " ten",
+                    " eleven",
+                    " twelve",
+                    " thirteen",
+                    " fourteen",
+                    " fifteen",
+                    " sixteen",
+                    " seventeen",
+                    " eighteen",
+                    " nineteen"
+            };
+
+    /**
+     * @see com.follett.fsc.core.k12.tools.reports.ReportJavaSourceDori#gatherData()
+     *      Localization Constants and Variables
+     */
+    Map<String, String> m_validLocales;
+    private static final String AMERICAN_ENGLISH_LOCALE = "en_US";
+    private static final String LOCALES = "locales";
+    private String m_defaultLocale;
+    public String DEFAULT_LOCALE_PARAM = "default_locale";
+
+    /**
+     * @see com.x2dev.sis.tools.reports.ReportJavaSourceDori#gatherData()
+     */
+    @Override
+    protected JRDataSource gatherData() {
+        ReportDataGrid grid = new ReportDataGrid(300, 2);
+        ReportDataGrid chartGrid = new ReportDataGrid();
+        ReportDataGrid summaryGrid = new ReportDataGrid();
+
+        /*
+         * Initializing localized parameters and values to allow for custom report sections
+         */
+        initializeLocalized();
+
+        /*
+         * Prepare the SQL parameters based on preferences/user input.
+         */
+        String activeCode = PreferenceManager.getPreferenceValue(getOrganization(), STUDENT_ACTIVE_CODE);
+        int minimumAbsences = ((Integer) getParameter(MINIMUM_ABSENCES_PARAM)).intValue();
+        BigDecimal lowerBound = new BigDecimal(minimumAbsences);
+        PlainDate endDate = (PlainDate) getParameter(END_DATE_PARAM);
+        boolean excludeExcused = ((Boolean) getParameter(EXCLUDE_EXCUSED_PARAM)).booleanValue();
+        boolean includeAll = ((Boolean) getParameter(INCLUDE_ALL_PARAM)).booleanValue();
+        boolean generateEvents = ((Boolean) getParameter(GENERATE_EVENTS_PARAM)).booleanValue();
+        PlainDate startDate = (PlainDate) getParameter(START_DATE_PARAM);
+        boolean multipleMailings = ((Boolean) getParameter(MULTIPLE_MAILINGS_PARAM)).booleanValue();
+        String eventComment = getParameter(EVENT_COMMENT_PARAM).toString();
+        m_eventName = getParameter(EVENT_NAME_PARAM).toString();
+
+        boolean printChartBar = ((Boolean) getParameter(PRINT_CHART_BAR_PARAM)).booleanValue();
+        String categoryFieldOid = (String) getParameter(CHART_BAR_CATEGORIES_PARAM);
+        String seriesFieldOid = (String) getParameter(CHART_BAR_SERIES_PARAM);
+
+        String eventType = m_eventName; // + lowerBound;
+
+        loadStudentEvents();
+
+        /*
+         * Execute a SQL statement to get the students and their absence total. The SQL is easier
+         * to write/maintain even though a query is then run for every student that matches the
+         * result set.
+         */
+        if (startDate != null && endDate != null && endDate.after(startDate)) {
+            StringBuilder sql = new StringBuilder(512);
+
+            sql.append(
+                    "SELECT A.ATT_STD_OID, SUM(A.ATT_PORTION_ABSENT), T0.TRK_OID, STD_NAME_VIEW, STD_YOG, STD_HOMEROOM");
+            sql.append("  FROM (");
+
+            sql.append("   SELECT ATT_STD_OID, ATT_PORTION_ABSENT");
+            sql.append("     FROM STUDENT_ATTENDANCE");
+            sql.append("    INNER JOIN STUDENT ON ATT_STD_OID = STD_OID");
+            sql.append("    WHERE ATT_DATE >= ?");
+            sql.append("      AND ATT_DATE <= ?");
+            sql.append("      AND STD_ENROLLMENT_STATUS = '" + activeCode + "'");
+            sql.append("      AND STD_SKL_OID = '" + ((SisSchool) getSchool()).getOid() + "'");
+
+            if (m_studentOid != null) {
+                sql.append("      AND STD_OID = '" + m_studentOid + "'");
+            }
+
+            if (excludeExcused) {
+                sql.append("      AND ATT_EXCUSED_IND = '0'");
+            }
+
+            sql.append(") A INNER JOIN STUDENT ON A.ATT_STD_OID = STD_OID ");
+            sql.append("    LEFT OUTER JOIN STUDENT_EVENT_TRACKING T0 ON T0.TRK_STD_OID = STD_OID ");
+            sql.append("                                             AND T0.TRK_CTX_OID = '"
+                    + ((SisOrganization) getOrganization()).getCurrentContextOid() + "'");
+            sql.append("                                             AND T0.TRK_EVENT_TYPE = '" + eventType + " >"
+                    + lowerBound.doubleValue() + " days'");
+            sql.append(" GROUP BY A.ATT_STD_OID, T0.TRK_OID, STD_NAME_VIEW, STD_YOG, STD_HOMEROOM ");
+            sql.append("HAVING SUM(A.ATT_PORTION_ABSENT) > " + lowerBound.doubleValue());
+            sql.append(" ORDER BY ");
+
+            int sort = ((Integer) getParameter(SORT_PARAM)).intValue();
+            switch (sort) {
+                case 1: // YOG
+                    sql.append("5, 4");
+                    break;
+
+                case 2: // Homeroom
+                    sql.append("6, 4");
+                    break;
+
+                default: // Name (case 0)
+                    sql.append("4");
+                    break;
+            }
+
+            addParameter(NUMBERS_TO_WORDS_PARAM, numbersToWords(minimumAbsences));
+
+            Connection connection = getBroker().borrowConnection();
+            PreparedStatement statement = null;
+            ResultSet results = null;
+
+            if (multipleMailings) {
+                loadMailingContacts();
+            }
+
+            try {
+                ModelBroker broker = new ModelBroker(getPrivilegeSet());
+                PlainDate today = new PlainDate();
+
+                statement = connection.prepareStatement(sql.toString());
+                statement.setDate(1, startDate);
+                statement.setDate(2, endDate);
+
+                results = statement.executeQuery();
+                while (results.next()) {
+                    String studentOid = results.getString(1);
+                    double absentTotal = results.getDouble(2);
+
+                    SisStudent student = (SisStudent) getBroker().getBeanByOid(Student.class, studentOid);
+
+                    StudentEventTracking event = (StudentEventTracking) m_studentEvents.get(studentOid);
+
+                    if (event == null || includeAll) {
+                        /*
+                         * Add the student bean the absence total to a grid. Create a event record
+                         * if
+                         * one doesn't already exist.
+                         */
+                        grid.append();
+                        grid.set(COL_STUDENT, student);
+                        grid.set(COL_ABSENT_TOTAL, new Double(absentTotal));
+                        grid.set(COL_ADDRESS, student.getPerson().getResolvedMailingAddress());
+                        grid.set(COL_PRINT_CHART, Boolean.valueOf(printChartBar));
+
+                        if (printChartBar) {
+                            SisDataFieldConfig categoryFieldConfig =
+                                    (SisDataFieldConfig) getBroker().getBeanByOid(SisDataFieldConfig.class,
+                                            categoryFieldOid);
+                            SisDataFieldConfig seriesFieldConfig =
+                                    (SisDataFieldConfig) getBroker().getBeanByOid(SisDataFieldConfig.class,
+                                            seriesFieldOid);
+
+                            addParameter(CATEGORY, categoryFieldConfig.getUserLongName());
+
+                            if (seriesFieldConfig != null) {
+                                addParameter(SERIES, seriesFieldConfig.getUserLongName());
+                            }
+
+                            Criteria attendanceCriteria = buildAttendanceCriteria(student, startDate, endDate);
+                            ColumnQuery chartQuery =
+                                    buildAttendanceQuery(categoryFieldOid, seriesFieldOid, attendanceCriteria);
+                            chartGrid = populateChartGrid(chartQuery);
+
+                            Report chartFormat = ReportUtils.getReport(SUB_CHART_REPORT_ID, getBroker());
+
+                            grid.set(COL_CHART_FORMAT, new ByteArrayInputStream(chartFormat.getCompiledFormat()));
+                            grid.set(COL_CHART_DATA, chartGrid);
+
+                            summaryGrid = populateChartGrid(chartQuery);
+
+                            Report summaryFormat = ReportUtils.getReport(SUB_CHART_SUMMARY_REPORT_ID, getBroker());
+
+                            grid.set(COL_SUMMARY_FORMAT, new ByteArrayInputStream(summaryFormat.getCompiledFormat()));
+                            grid.set(COL_SUMMARY_DATA, summaryGrid);
+                        }
+
+                        if (multipleMailings) {
+                            Collection contacts = (Collection) m_studentContacts.get(studentOid);
+                            if (contacts != null) {
+                                Iterator contactIterator = contacts.iterator();
+                                while (contactIterator.hasNext()) {
+                                    StudentContact contact = (StudentContact) contactIterator.next();
+
+                                    grid.append();
+                                    grid.set(COL_STUDENT, student);
+                                    grid.set(COL_ABSENT_TOTAL, new Double(absentTotal));
+                                    grid.set(COL_ADDRESS,
+                                            contact.getContact().getPerson().getResolvedMailingAddress());
+                                    grid.set(COL_PRINT_CHART, Boolean.valueOf(printChartBar));
+
+                                    if (printChartBar) {
+                                        Report chartFormat = ReportUtils.getReport(SUB_CHART_REPORT_ID, getBroker());
+
+                                        grid.set(COL_CHART_FORMAT,
+                                                new ByteArrayInputStream(chartFormat.getCompiledFormat()));
+                                        grid.set(COL_CHART_DATA, chartGrid);
+
+                                        Report summaryFormat =
+                                                ReportUtils.getReport(SUB_CHART_SUMMARY_REPORT_ID, getBroker());
+
+                                        grid.set(COL_SUMMARY_FORMAT,
+                                                new ByteArrayInputStream(summaryFormat.getCompiledFormat()));
+                                        grid.set(COL_SUMMARY_DATA, summaryGrid);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Should not create an event if includeAll was checked off.
+                        if (generateEvents) {
+                            if (event == null) {
+                                StudentEventTracking newEvent = X2BaseBean.newInstance(StudentEventTracking.class,
+                                        getBroker().getPersistenceKey());
+
+                                newEvent.setDistrictContextOid(
+                                        ((SisOrganization) getOrganization()).getCurrentContextOid());
+                                newEvent.setEventDate(today);
+                                newEvent.setEventType(m_eventName + " >" + minimumAbsences + " days");
+                                newEvent.setStudentOid(studentOid);
+                                newEvent.setComment(eventComment + " --> Report run for date range: " + startDate
+                                        + " to " + endDate);
+
+                                broker.saveBean(newEvent);
+                            }
+                        }
+
+                    }
+                }
+            } catch (SQLException sqle) {
+                AppGlobals.getLog().log(Level.WARNING, sqle.getMessage(), sqle);
+            } finally {
+                try {
+                    if (results != null) {
+                        results.close();
+                    }
+
+                    if (statement != null) {
+                        statement.close();
+                    }
+                } catch (Exception e) {
+                    AppGlobals.getLog().log(Level.WARNING, e.getMessage(), e);
+                }
+
+                getBroker().returnConnection();
+            }
+        }
+
+        grid.beforeTop();
+
+        return grid;
+    }
+
+    /**
+     * Remember the currently selected student if this report is being run from the student module.
+     *
+     * @see com.x2dev.sis.tools.ToolJavaSource#saveState(com.x2dev.sis.web.UserDataContainer)
+     */
+    @Override
+    protected void saveState(UserDataContainer userData) {
+        ContextList parentList = userData.getParentList();
+        if (parentList != null && parentList.getDataClass().equals(SisStudent.class)) {
+            m_studentOid = parentList.getCurrentRecord().getOid();
+        }
+    }
+
+    /**
+     * Loads the mailing contacts for students into a Map of StudentContacts keyed to student OID.
+     */
+    private void loadMailingContacts() {
+        Criteria criteria = new Criteria();
+        criteria.addEqualTo(StudentContact.COL_CONDUCT_MAILING_INDICATOR, Boolean.TRUE);
+        criteria.addNotEqualTo(StudentContact.COL_LIVES_WITH_INDICATOR, Boolean.TRUE);
+
+        if (isSchoolContext()) {
+            criteria.addEqualTo(StudentContact.REL_STUDENT + "." + SisStudent.COL_SCHOOL_OID,
+                    ((SisSchool) getSchool()).getOid());
+        }
+
+        QueryByCriteria query = new QueryByCriteria(StudentContact.class, criteria);
+        m_studentContacts = getBroker().getGroupedCollectionByQuery(query, StudentContact.COL_STUDENT_OID, 2000);
+    }
+
+    /**
+     * Loads the student event records into a Map keyed to student OID.
+     */
+    private void loadStudentEvents() {
+        Criteria criteria = new Criteria();
+        criteria.addEqualTo(StudentEventTracking.COL_DISTRICT_CONTEXT_OID,
+                ((SisOrganization) getOrganization()).getCurrentContextOid());
+        criteria.addLike(StudentEventTracking.COL_EVENT_TYPE, m_eventName + "%");
+
+        QueryByCriteria query = new QueryByCriteria(StudentEventTracking.class, criteria);
+        query.addOrderByAscending(StudentEventTracking.COL_EVENT_DATE);
+
+        m_studentEvents = getBroker().getMapByQuery(query, StudentEventTracking.COL_STUDENT_OID, 5000);
+    }
+
+    /**
+     * converts numbers to English words to be displayed in the report
+     * method added for portability purposes
+     *
+     * @param number
+     * @return
+     */
+    private static String numbersToWords(int number) {
+        String toWords;
+
+        if (number % 100 < 20) {
+            toWords = NUM_NAMES[number % 100];
+            number /= 100;
+        } else {
+            toWords = NUM_NAMES[number % 10];
+            number /= 10;
+
+            toWords = TENS_NAMES[number % 10] + toWords;
+            number /= 10;
+        }
+
+        if (number == 0) {
+            return toWords;
+        }
+
+        return NUM_NAMES[number] + " hundred" + toWords;
+    }
+
+    /**
+     * Adds the localization parameters Populates the Valid Locales map Initializes the
+     */
+    private void initializeLocalized() {
+        Collection<OrganizationLocale> locales = getOrganization().getRootOrganization().getLocales();
+        Map<String, MessageResources> resources = new HashMap<String, MessageResources>();
+        // m_localized = !getBooleanParameter("englishOnly");
+        m_validLocales = new HashMap<String, String>();
+        m_defaultLocale = null;// start at null and check in case overwritten with invalid
+        for (OrganizationLocale loc : locales) {
+            if (loc.getEnabledIndicator()) {
+
+                MessageResources messages =
+                        LocalizationCache.getMessages(getBroker().getPersistenceKey(), loc.getLocale());
+                // save the messages for that language
+                resources.put(loc.getLocale(), messages);
+                logToolMessage(Level.INFO, "adding " + loc.getName(), false);
+                // populate the map of valid locales
+                m_validLocales.put(loc.getName(), loc.getLocale());
+                if (loc.getPrimaryIndicator())
+
+                {
+                    logToolMessage(Level.INFO, "making " + loc.getName() + " default", false);
+                    m_defaultLocale = loc.getLocale();
+                }
+            }
+        }
+        if (m_defaultLocale == null || m_defaultLocale.isEmpty()) {
+            m_defaultLocale = AMERICAN_ENGLISH_LOCALE;
+        }
+        addParameter("prefix", "tools." + getJob().getTool().getOid() + ".");
+        addParameter(LOCALES, resources);
+        addParameter(DEFAULT_LOCALE_PARAM, AMERICAN_ENGLISH_LOCALE);
+    }
+
+    /**
+     * Builds criteria to the StudentAttendance.
+     *
+     * @param student
+     * @param startDate
+     * @param endDate
+     *
+     * @return Criteria
+     */
+    private Criteria buildAttendanceCriteria(SisStudent student, PlainDate startDate, PlainDate endDate) {
+        Criteria criteria = new Criteria();
+        criteria.addEqualTo(StudentAttendance.COL_STUDENT_OID, student.getOid());
+        criteria.addGreaterOrEqualThan(StudentAttendance.COL_DATE, startDate);
+        criteria.addLessOrEqualThan(StudentAttendance.COL_DATE, endDate);
+
+        return criteria;
+    }
+
+    /**
+     * Builds ColumnQuery to the Student Attendance
+     * by the selected category column, series column and criteria
+     *
+     * @param categoryFieldOid
+     * @param seriesFieldOid
+     * @param criteria
+     *
+     * @return ColumnQuery
+     */
+    private ColumnQuery buildAttendanceQuery(String categoryFieldOid, String seriesFieldOid, Criteria criteria) {
+        String[] columns;
+        SisDataFieldConfig categoryFieldConfig =
+                (SisDataFieldConfig) getBroker().getBeanByOid(SisDataFieldConfig.class, categoryFieldOid);
+        SisDataFieldConfig seriesFieldConfig =
+                (SisDataFieldConfig) getBroker().getBeanByOid(SisDataFieldConfig.class, seriesFieldOid);
+
+
+        if (seriesFieldConfig != null) {
+            columns = new String[2];
+            columns[0] = categoryFieldConfig.getDataField().getJavaName();
+            columns[1] = seriesFieldConfig.getDataField().getJavaName();
+        } else {
+            columns = new String[1];
+            columns[0] = categoryFieldConfig.getDataField().getJavaName();
+        }
+
+        ColumnQuery query = new ColumnQuery(StudentAttendance.class, columns, criteria);
+
+        return query;
+    }
+
+    /**
+     * Populates chart grid.
+     *
+     * @param query
+     *
+     * @return ReportDataGrid
+     */
+    private ReportDataGrid populateChartGrid(ColumnQuery query) {
+        ReportDataGrid grid = new ReportDataGrid();
+
+        HashMap<String, BigDecimal> categoryMap = new HashMap<String, BigDecimal>();
+        HashMap<String, String> seriesMap = new HashMap<String, String>();
+
+        BigDecimal totalCount = new BigDecimal(0);
+
+        ReportQueryIterator iterator = getBroker().getReportQueryIteratorByQuery(query);
+        try {
+            while (iterator.hasNext()) {
+                Object[] row = (Object[]) iterator.next();
+
+                String convertedCategory = convertToString(row[0]);
+                int count =
+                        categoryMap.containsKey(convertedCategory) ? categoryMap.get(convertedCategory).intValue() : 0;
+                categoryMap.put(convertedCategory, BigDecimal.valueOf(count + 1));
+
+                if (row.length > 1) {
+                    String convertedSeries = convertToString(row[1]);
+                    seriesMap.put(convertedCategory, convertedSeries);
+                }
+
+                totalCount = totalCount.add(new BigDecimal(1));
+            }
+
+            for (Map.Entry<String, BigDecimal> category : categoryMap.entrySet()) {
+                grid.append();
+                grid.set(COL_COUNT, category.getValue());
+                grid.set(COL_CATEGORY, category.getKey());
+                if (!seriesMap.isEmpty()) {
+                    grid.set(COL_SERIES, seriesMap.get(category.getKey()));
+                }
+                grid.set(COL_TOTAL_COUNT, totalCount);
+            }
+        } finally {
+            iterator.close();
+        }
+
+        grid.beforeTop();
+
+        return grid;
+    }
+
+    /**
+     * Converts passed value to String.
+     * Returns converted value or empty string if can't convert value.
+     *
+     * @param value
+     *
+     * @return String
+     */
+    private String convertToString(Object value) {
+        String result = "";
+
+        if (value != null) {
+            if (value instanceof String) {
+                result = (String) value;
+            } else if (value instanceof PlainDate || value instanceof Date) {
+                Converter dateConverter = ConverterFactory.getConverterForClass(Converter.DATE_CONVERTER, getLocale());
+                result = dateConverter.javaToString(value);
+            } else if (value instanceof BigDecimal) {
+                Converter decimalConverter =
+                        ConverterFactory.getConverterForClass(Converter.BIG_DECIMAL_CONVERTER, getLocale());
+                result = decimalConverter.javaToString(value);
+            }
+        }
+
+        return result;
+    }
 }
