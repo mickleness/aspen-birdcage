@@ -48,7 +48,7 @@
 	<parameter name="SUBREPORT_DIR" class="java.lang.String" isForPrompting="false">
 		<defaultValueExpression><![CDATA["F:\\projects\\workspace\\aspen\\reports\\source\\com\\x2dev\\reports\\portable\\"]]></defaultValueExpression>
 	</parameter>
-	<field name="comparisonChartPng" class="javax.activation.DataSource"/>
+	<field name="comparisonChartPng" class="net.sf.jasperreports5.renderers.JFreeChartRenderer"/>
 	<field name="student" class="com.x2dev.sis.model.beans.SisStudent"/>
 	<field name="absences" class="java.lang.Double"/>
 	<field name="address" class="com.x2dev.sis.model.beans.SisAddress"/>
@@ -294,7 +294,7 @@ $F{student}.getPrimaryContact().getContact().getPerson().getNameTitleCode() + " 
 					<property name="local_mesure_unity" value="pixel"/>
 					<property name="com.jaspersoft.studio.unit.y" value="px"/>
 				</reportElement>
-				<imageExpression><![CDATA[$F{comparisonChartPng}.getInputStream()]]></imageExpression>
+				<imageExpression><![CDATA[$F{comparisonChartPng}]]></imageExpression>
 			</image>
 		</band>
 	</detail>

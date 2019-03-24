@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
 
 import javax.activation.DataSource;
 import javax.imageio.ImageIO;
@@ -54,116 +55,12 @@ import com.x2dev.sis.model.beans.StudentAttendance;
 import com.x2dev.sis.model.beans.path.SisBeanPaths;
 import com.x2dev.utils.DateUtils;
 import com.x2dev.utils.KeyValuePair;
+import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.types.PlainDate;
 
 import net.sf.jasperreports.engine.JRDataSource;
 
 public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
-	
-	static class AttendanceChartDataSource implements DataSource {
-		LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap;
-		String firstName;
-
-		public AttendanceChartDataSource(LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap, String firstName) {
-			this.comparisonMap = comparisonMap;
-			this.firstName = firstName;
-		}
-
-		@Override
-		public String getContentType() {
-			return "image/png";
-		}
-
-		@Override
-		public InputStream getInputStream() throws IOException {
-			JFreeChart chart = createChart(comparisonMap, firstName);
-			byte[] pngImage;
-			try(ByteArrayOutputStream byteOut = new ByteArrayOutputStream()) {
-				BufferedImage bi = chart.createBufferedImage(800, 600);
-				ImageIO.write(bi, "png", byteOut);
-				pngImage = byteOut.toByteArray();
-				return new ByteArrayInputStream(pngImage);
-			} catch(Exception e) {
-				throw new RuntimeException(e);
-			}
-		}
-
-		@Override
-		public String getName() {
-			return "Chart";
-		}
-
-		@Override
-		public OutputStream getOutputStream() {
-			return null;
-		}
-
-		private JFreeChart createChart(LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap,String studentFirstName) {
-	        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
-	        for(Entry<Month, KeyValuePair<Integer, Double>> entry : comparisonMap.entrySet()) {
-	        	dataset.addValue( entry.getValue().getKey().doubleValue(), studentFirstName, entry.getKey());
-	        	dataset.addValue( entry.getValue().getValue().doubleValue(), "Peers", entry.getKey());
-	        }
-		    
-	        JFreeChart chart = ChartFactory.createBarChart(
-	            "",         // chart title
-	            "",               // domain axis label
-	            "Absences",                  // range axis label
-	            dataset,                  // data
-	            PlotOrientation.VERTICAL, // orientation
-	            true,                     // include legend
-	            false,                     // tooltips?
-	            false                     // URLs?
-	        );
-
-	        // set the background color for the chart...
-	        //chart.setBackgroundPaint(Color.white);
-
-	        // get a reference to the plot for further customisation...
-	        final CategoryPlot plot = chart.getCategoryPlot();
-	        plot.setRangeGridlinePaint(Color.black);
-	        plot.setBackgroundPaint(Color.white);
-//	        plot.setDomainGridlinePaint(Color.white);
-//	        plot.setRangeGridlinePaint(Color.white);
-
-	        // set the range axis to display integers only...
-	        final NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-	        rangeAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
-	        
-	        // set up gradient paints for series...
-	        final BarRenderer renderer = (BarRenderer) plot.getRenderer();
-	        
-	        renderer.setBarPainter(new BarPainter() {
-
-				@Override
-				public void paintBar(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base) {
-					g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-					g2.setPaint(renderer.getSeriesPaint(row));
-					g2.fill(bar);
-					g2.setStroke(new BasicStroke(1));
-					g2.setColor(Color.black);
-					g2.draw(bar);
-				}
-
-				@Override
-				public void paintBarShadow(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base, boolean pegShadow) {
-					// unimplemented
-				}
-	        	
-	        });
-	        renderer.setSeriesPaint(0, ImageUtils.createStripedPaint(1, 3, 1, true));
-	        renderer.setSeriesPaint(1, ImageUtils.createDottedPaint(1, 5, 10));
-
-	        final CategoryAxis domainAxis = plot.getDomainAxis();
-	        domainAxis.setCategoryLabelPositions(
-	            CategoryLabelPositions.createUpRotationLabelPositions(Math.PI / 6.0)
-	        );
-			chart.setBackgroundPaint(Color.white);
-			chart.setTextAntiAlias(true);
-			
-	        return chart;
-		}
-	}
 
 	private static final long serialVersionUID = 1L;
     public static final String COL_COMPARISON_CHART_PNG = "comparisonChartPng";
@@ -197,10 +94,83 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
 			SisStudent std = (SisStudent) map.get(COL_STUDENT);
 			LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap = getStudentComparisonMap(std);
 			if(comparisonMap!=null) {
-				map.put(COL_COMPARISON_CHART_PNG, new AttendanceChartDataSource(comparisonMap, std.getPerson().getFirstName()));
+				JFreeChart chart = createChart(comparisonMap, std.getPerson().getFirstName());
+				try {
+					Class rendererClass = Class.forName("net.sf.jasperreports5.renderers.JFreeChartRenderer");
+					Object renderer = rendererClass.getConstructor(JFreeChart.class).newInstance(chart);
+					map.put(COL_COMPARISON_CHART_PNG, renderer);
+				} catch(Exception e) {
+					logToolMessage(Level.WARNING, LoggerUtils.convertThrowableToString(e), false);
+				}
 			}
 		}
 		return data;
+	}
+
+	private JFreeChart createChart(LinkedHashMap<Month, KeyValuePair<Integer, Double>> comparisonMap,String studentFirstName) {
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+        for(Entry<Month, KeyValuePair<Integer, Double>> entry : comparisonMap.entrySet()) {
+        	dataset.addValue( entry.getValue().getKey().doubleValue(), studentFirstName, entry.getKey());
+        	dataset.addValue( entry.getValue().getValue().doubleValue(), "Peers", entry.getKey());
+        }
+	    
+        JFreeChart chart = ChartFactory.createBarChart(
+            "",         // chart title
+            "",               // domain axis label
+            "Absences",                  // range axis label
+            dataset,                  // data
+            PlotOrientation.VERTICAL, // orientation
+            true,                     // include legend
+            false,                     // tooltips?
+            false                     // URLs?
+        );
+
+        // set the background color for the chart...
+        //chart.setBackgroundPaint(Color.white);
+
+        // get a reference to the plot for further customisation...
+        final CategoryPlot plot = chart.getCategoryPlot();
+        plot.setRangeGridlinePaint(Color.black);
+        plot.setBackgroundPaint(Color.white);
+//        plot.setDomainGridlinePaint(Color.white);
+//        plot.setRangeGridlinePaint(Color.white);
+
+        // set the range axis to display integers only...
+        final NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
+        rangeAxis.setStandardTickUnits(NumberAxis.createIntegerTickUnits());
+        
+        // set up gradient paints for series...
+        final BarRenderer renderer = (BarRenderer) plot.getRenderer();
+        
+        renderer.setBarPainter(new BarPainter() {
+
+			@Override
+			public void paintBar(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base) {
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				g2.setPaint(renderer.getSeriesPaint(row));
+				g2.fill(bar);
+				g2.setStroke(new BasicStroke(1));
+				g2.setColor(Color.black);
+				g2.draw(bar);
+			}
+
+			@Override
+			public void paintBarShadow(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base, boolean pegShadow) {
+				// unimplemented
+			}
+        	
+        });
+        renderer.setSeriesPaint(0, ImageUtils.createStripedPaint(10, 3, 1, true));
+        renderer.setSeriesPaint(1, ImageUtils.createDottedPaint(10, 5, 10));
+
+        final CategoryAxis domainAxis = plot.getDomainAxis();
+        domainAxis.setCategoryLabelPositions(
+            CategoryLabelPositions.createUpRotationLabelPositions(Math.PI / 6.0)
+        );
+		chart.setBackgroundPaint(Color.white);
+		chart.setTextAntiAlias(true);
+		
+        return chart;
 	}
 
 	private LinkedHashMap<Month, KeyValuePair<Integer, Double>> getStudentComparisonMap(SisStudent std) {
