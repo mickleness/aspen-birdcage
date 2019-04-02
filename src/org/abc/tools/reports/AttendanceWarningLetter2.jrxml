@@ -48,7 +48,8 @@
 	<parameter name="SUBREPORT_DIR" class="java.lang.String" isForPrompting="false">
 		<defaultValueExpression><![CDATA["F:\\projects\\workspace\\aspen\\reports\\source\\com\\x2dev\\reports\\portable\\"]]></defaultValueExpression>
 	</parameter>
-	<field name="comparisonChart" class="net.sf.jasperreports5.renderers.JFreeChartRenderer"/>
+	<field name="comparisonMonthChart" class="net.sf.jasperreports5.renderers.JFreeChartRenderer"/>
+	<field name="comparisonTotalChart" class="net.sf.jasperreports5.renderers.JFreeChartRenderer"/>
 	<field name="student" class="com.x2dev.sis.model.beans.SisStudent"/>
 	<field name="absences" class="java.lang.Double"/>
 	<field name="address" class="com.x2dev.sis.model.beans.SisAddress"/>
@@ -283,9 +284,9 @@ $F{student}.getPrimaryContact().getContact().getPerson().getNameTitleCode() + " 
 			</textField>
 		</band>
 		<band height="322" splitType="Stretch">
+			<printWhenExpression><![CDATA[$F{comparisonMonthChart}!=null]]></printWhenExpression>
 			<break>
-				<reportElement x="0" y="3" width="468" height="1" uuid="3e95a2b9-c6cf-43e7-98d5-dbd4afb2c232">
-				</reportElement>
+				<reportElement x="0" y="3" width="468" height="1" uuid="3e95a2b9-c6cf-43e7-98d5-dbd4afb2c232"/>
 			</break>
 			<image hAlign="Center" vAlign="Middle">
 				<reportElement x="43" y="36" width="385" height="240" uuid="a1464645-2a19-4d36-9563-433d8225331d">
@@ -294,7 +295,22 @@ $F{student}.getPrimaryContact().getContact().getPerson().getNameTitleCode() + " 
 					<property name="local_mesure_unity" value="pixel"/>
 					<property name="com.jaspersoft.studio.unit.y" value="px"/>
 				</reportElement>
-				<imageExpression><![CDATA[$F{comparisonChart}]]></imageExpression>
+				<imageExpression><![CDATA[$F{comparisonMonthChart}]]></imageExpression>
+			</image>
+		</band>
+		<band height="322" splitType="Stretch">
+			<printWhenExpression><![CDATA[$F{comparisonTotalChart}!=null]]></printWhenExpression>
+			<break>
+				<reportElement x="0" y="3" width="468" height="1" uuid="3e95a2b9-c6cf-43e7-98d5-dbd4afb2c232"/>
+			</break>
+			<image hAlign="Center" vAlign="Middle">
+				<reportElement x="113" y="40" width="240" height="240" uuid="a1464645-2a19-4d36-9563-433d8225331d">
+					<property name="local_mesure_unitx" value="pixel"/>
+					<property name="com.jaspersoft.studio.unit.x" value="px"/>
+					<property name="local_mesure_unity" value="pixel"/>
+					<property name="com.jaspersoft.studio.unit.y" value="px"/>
+				</reportElement>
+				<imageExpression><![CDATA[$F{comparisonTotalChart}]]></imageExpression>
 			</image>
 		</band>
 	</detail>

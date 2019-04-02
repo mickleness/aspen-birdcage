@@ -1,0 +1,147 @@
+<!-- **************************************************************************************************** -->
+<!-- REPORT INPUT DEFINITIONS FOR THE "ATTENDANCE WARNING LETTER" REPORT FOR MONTVILLE ELEMENTARY SCHOOLS -->
+<!-- **************************************************************************************************** -->
+
+<tool-input allow-school-select="true" district-support="false" height="475" >
+
+<tab name="Absences">
+ <!-- ********** -->
+ <!-- DATE RANGE -->
+ <!-- ********** -->
+
+ <input name="startDate" data-type="date" display-type="date" display-name="report.shared.startDate" default-value="districtYearStart" />
+ <input name="endDate" data-type="date" display-type="date" display-name="report.shared.endDate" default-value="today" />
+
+ <!-- ******************* -->
+ <!-- EXCLUDE EXCUSED MATCHES -->
+ <!-- ******************* -->
+
+ <input name="excludeExcused" data-type="boolean" display-type="checkbox" display-name="report.absences.exludeExcused" default-value="true" />
+
+ <!-- ******************* -->
+ <!-- INCLUDE ALL MATCHES -->
+ <!-- ******************* -->
+
+ <input name="includeAll" data-type="boolean" display-type="checkbox" display-name="report.absences.includeAll" />
+ 
+ <!-- ******************* -->
+ <!--INCLUDE STUDENT ID -->
+ <!-- ******************* -->
+
+ <input name="includeStudentId" data-type="boolean" display-type="checkbox" display-name="Include Student ID" default-value="false" />
+
+ <!-- ******************* -->
+ <!-- GENERATE EVENT RECORDS -->
+ <!-- ******************* -->
+
+ <input name="generateEvents" data-type="boolean" display-type="checkbox" display-name="Generate student events" default-value="false" />
+ 
+ <!-- ************************ -->
+ <!-- MULTIPLE MAILINGS OPTION -->
+ <!-- ************************ -->
+
+ <input name="multipleMailings" data-type="boolean" display-type="checkbox" display-name="report.shared.alternateMailings" />
+ 
+ <!-- ************ -->
+ <!-- SORT OPTIONS -->
+ <!-- ************ -->
+
+ <input name="sort" data-type="integer" display-type="select" display-name="report.shared.sort">
+  <option value="0" display-name="report.shared.sort.name"/>
+  <option value="1" display-name="report.shared.sort.yog"/>
+  <option value="2" display-name="report.shared.sort.homeroom"/>
+ </input>
+ 
+ <!-- ************ -->
+ <!-- MINIMUM ABSENCES -->
+ <!-- ************ -->
+
+<!-- input name="newAbsences" data-type="boolean" display-type="checkbox" default-value="false" display-name="Customize absences counts (optional)" >
+<disable input-name="minimumAbsences" if-parent-equals="false" />
+</input -->
+<input name="minimumAbsences" data-type="integer" display-type="text" display-name="Absences count greater than" default-value="4" />
+
+<!-- input name="minimumAbsences" data-type="integer" display-type="hidden" display-name="More than (optional)" default-value="4" / -->
+
+
+</tab>
+
+<tab name="Event Records">
+  <!-- ********************** -->
+ <!-- EVENT PREFIX -->
+ <!-- ********************** -->
+ 
+ <input name="eventPrefix" data-type="string" display-type="text" width="100" display-name="Event Type (Name)"  default-value="Attendance Warning Letter"/>
+
+ <!-- ********************** -->
+ <!-- EVENT COMMENT -->
+ <!-- ********************** -->
+ 
+ <input name="eventComment" data-type="string" display-type="text" display-name="Event Comment (optional):"  default-value=" "/>
+
+</tab>
+
+<tab name="Signature">
+
+ <!-- **************** -->
+ <!-- SIGNATURE LINE -->
+ <!-- **************** -->
+
+ <input name="printSignatureLine" data-type="boolean" display-type="checkbox" display-name="Print signature line:" default-value="false"/>
+
+ <!-- **************** -->
+ <!-- DEAN OF STUDENTS -->
+ <!-- **************** -->
+
+ <input name="deanOfStudentsName" data-type="string" display-type="text" display-name="Signature Name:" default-value="Signing Official" required="false" />
+ 
+  <!-- **************** -->
+ <!-- SIGNATURE TITLE -->
+ <!-- **************** -->
+
+ <input name="deanOfStudentsTitle" data-type="string" display-type="text" display-name="Signature Title:" default-value="Signing Official Title" required="false" />
+ 
+ <!-- ********************** -->
+ <!-- DEAN OF STUDENTS PHONE -->
+ <!-- ********************** -->
+ 
+ <input name="deanOfStudentsPhone" data-type="string" display-type="text" display-name="Signature Phone:"  default-value="(555) 555-0001 extensions 1234 or 1235" required="false" />
+
+</tab>
+ 
+ <tab name="Header">
+  
+ <!-- **************** -->
+ <!-- HEADER DIVISION LINE -->
+ <!-- **************** -->
+
+ <input name="printHeaderLine" data-type="boolean" display-type="checkbox" display-name="Print header line:" default-value="false" />
+ 
+ <!-- *************** -->
+ <!-- PRINT LETTER HEADER -->
+ <!-- *************** -->
+
+ <input name="printHeader" data-type="boolean" display-type="checkbox" display-name="Print Header from Translate tab" required="false" default-value="true" />
+ 
+ <!-- *************** -->
+ <!-- PRINT IMAGE ON HEADER -->
+ <!-- *************** -->
+
+ <input name="printImage" data-type="boolean" display-type="checkbox" display-name="Include Logo" required="false" default-value="true" />
+ 
+ <!-- *************** -->
+ <!-- PRINT DATE ON TOP -->
+ <!-- *************** -->
+
+ <input name="printDate" data-type="boolean" display-type="checkbox" display-name="Print date on top" required="false" default-value="true" />
+
+</tab>
+
+<tab name="Charts">
+
+<input name="printMonthlyChartBar" data-type="boolean" display-type="checkbox" display-name="Include Monthly Bar Chart" default-value="true"/>
+<input name="printTotalChartBar" data-type="boolean" display-type="checkbox" display-name="Include Total Bar Chart" default-value="false"/>
+
+</tab>
+
+</tool-input>

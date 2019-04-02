@@ -12,8 +12,10 @@ import java.awt.TexturePaint;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Line2D;
 import java.awt.geom.Point2D;
+import java.awt.geom.RectangularShape;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Date;
@@ -27,6 +29,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.logging.Level;
@@ -42,8 +45,10 @@ import org.jfree.chart.axis.CategoryLabelPositions;
 import org.jfree.chart.axis.NumberAxis;
 import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.renderer.category.BarPainter;
 import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
+import org.jfree.ui.RectangleEdge;
 
 import com.follett.fsc.core.framework.persistence.BeanQuery;
 import com.follett.fsc.core.framework.persistence.ColumnQuery;
@@ -75,8 +80,6 @@ import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.converters.Converter;
 import com.x2dev.utils.types.PlainDate;
 
-import com.x2dev.utils.converters.ConverterFactory;
-
 import net.sf.jasperreports.engine.JRDataSource;
 
 public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
@@ -97,7 +100,11 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
 	}
 
 	private static final long serialVersionUID = 1L;
-    public static final String COL_COMPARISON_CHART_PNG = "comparisonChart";
+    public static final String COL_COMPARISON_MONTH_CHART_PNG = "comparisonMonthChart";
+    public static final String COL_COMPARISON_TOTAL_CHART_PNG = "comparisonTotalChart";
+    
+    private static final String PARAM_MONTHLY_CHART = "printMonthlyChartBar";
+    private static final String PARAM_TOTAL_CHART = "printTotalChartBar";
     
     String activeCode;
     PlainDate endDate;
@@ -106,90 +113,104 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
 
 	@Override
 	protected JRDataSource gatherData() {
+		getParameters().put(PRINT_CHART_BAR_PARAM, Boolean.FALSE);
+		
         activeCode = PreferenceManager.getPreferenceValue(getOrganization(), STUDENT_ACTIVE_CODE);
         endDate = (PlainDate) getParameter(END_DATE_PARAM);
         startDate = (PlainDate) getParameter(START_DATE_PARAM);
         excludeExcused = ((Boolean) getParameter(EXCLUDE_EXCUSED_PARAM)).booleanValue();
         
 		ReportDataGrid data = (ReportDataGrid) super.gatherData();
-		Map<SisStudent, Map<String, Object>> stdToRowMap = new HashMap<>();
-		Map<String, Map<String, Collection<SisStudent>>> sklToGradeLevelToStdMap = new HashMap<>();
-		for(Map<String, Object> map : data.getRows()) {
-			SisStudent std = (SisStudent) map.get(COL_STUDENT);
-			stdToRowMap.put(std, map);
-			
-			String sklOid = std.getSchoolOid();
-			String gradeLevel = std.getGradeLevel();
-			if(!StringUtils.isEmpty(sklOid) && !StringUtils.isEmpty(gradeLevel)) {
-				Map<String, Collection<SisStudent>> gradeLevelMap = sklToGradeLevelToStdMap.get(sklOid);
-				if(gradeLevelMap==null) {
-					gradeLevelMap = new HashMap<>();
-					sklToGradeLevelToStdMap.put(sklOid, gradeLevelMap);
+		
+		Boolean monthlyChart = (Boolean) getParameter(PARAM_MONTHLY_CHART);
+		Boolean totalChart = (Boolean) getParameter(PARAM_TOTAL_CHART);
+		if(Boolean.TRUE.equals(monthlyChart) || Boolean.TRUE.equals(totalChart)) {
+			Map<SisStudent, Map<String, Object>> stdToRowMap = new HashMap<>();
+			Map<String, Map<String, Collection<SisStudent>>> sklToGradeLevelToStdMap = new HashMap<>();
+			for(Map<String, Object> map : data.getRows()) {
+				SisStudent std = (SisStudent) map.get(COL_STUDENT);
+				stdToRowMap.put(std, map);
+				
+				String sklOid = std.getSchoolOid();
+				String gradeLevel = std.getGradeLevel();
+				if(!StringUtils.isEmpty(sklOid) && !StringUtils.isEmpty(gradeLevel)) {
+					Map<String, Collection<SisStudent>> gradeLevelMap = sklToGradeLevelToStdMap.get(sklOid);
+					if(gradeLevelMap==null) {
+						gradeLevelMap = new HashMap<>();
+						sklToGradeLevelToStdMap.put(sklOid, gradeLevelMap);
+					}
+					Collection<SisStudent> students = gradeLevelMap.get(gradeLevel);
+					if(students==null) {
+						students = new HashSet<>();
+						gradeLevelMap.put(gradeLevel, students);
+					}
+					students.add(std);
 				}
-				Collection<SisStudent> students = gradeLevelMap.get(gradeLevel);
-				if(students==null) {
-					students = new HashSet<>();
-					gradeLevelMap.put(gradeLevel, students);
-				}
-				students.add(std);
 			}
-		}
-
-		for(Entry<String, Map<String, Collection<SisStudent>>> sklToGradeLevelToStdEntry : sklToGradeLevelToStdMap.entrySet()) {
-			String sklOid = sklToGradeLevelToStdEntry.getKey();
-			
-			Map<String, Collection<SisStudent>> studentsByGradeLevel = sklToGradeLevelToStdEntry.getValue();
-			for(Entry<String, Collection<SisStudent>> studentsByGradeLevelEntry : studentsByGradeLevel.entrySet()) {
-				String gradeLevel = studentsByGradeLevelEntry.getKey();
+	
+			for(Entry<String, Map<String, Collection<SisStudent>>> sklToGradeLevelToStdEntry : sklToGradeLevelToStdMap.entrySet()) {
+				String sklOid = sklToGradeLevelToStdEntry.getKey();
 				
-				X2Criteria studentCountCriteria = new X2Criteria();
-		        studentCountCriteria.addEqualTo(SisStudent.COL_GRADE_LEVEL, gradeLevel);
-		        studentCountCriteria.addEqualTo(SisStudent.COL_SCHOOL_OID, sklOid);
-		        studentCountCriteria.addEqualTo(SisStudent.COL_ENROLLMENT_STATUS, activeCode);
-		        BeanQuery studentCountQuery = new BeanQuery(SisStudent.class, studentCountCriteria);
-		        int gradeLevelSize = getBroker().getCount(studentCountQuery);
-
-				X2Criteria attendanceCriteria = new X2Criteria();
-				attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().gradeLevel().toString(), gradeLevel);
-				attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().schoolOid().toString(), sklOid);
-				attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().enrollmentStatus().toString(), activeCode);
-				attendanceCriteria.addGreaterOrEqualThan(SisBeanPaths.STUDENT_ATTENDANCE.date().toString(), startDate);
-				attendanceCriteria.addLessOrEqualThan(SisBeanPaths.STUDENT_ATTENDANCE.date().toString(), endDate);
-				if(excludeExcused) {
-					attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.excusedIndicator().toString(), Boolean.FALSE);
-				}
-				
-				BeanQuery attendanceQuery = new BeanQuery(StudentAttendance.class, attendanceCriteria);			
-				Map<PlainDate, Map<String, StudentAttendance>> atts = getBroker().getNestedMapByQuery(attendanceQuery, StudentAttendance.COL_DATE, StudentAttendance.COL_OID, 10, 10);
-
-				for(SisStudent std : studentsByGradeLevelEntry.getValue()) {
-					LinkedHashMap<Month, AbsenceComparison> absencesByMonth = new LinkedHashMap<>();
-					for(PlainDate date = startDate; date.compareTo(endDate)<=0; date = DateUtils.add(date, 1)) {
-						Month month = Month.getMonth(date);
-						AbsenceComparison absenceInfo = absencesByMonth.get(month);
-						if(absenceInfo==null) {
-							absenceInfo = new AbsenceComparison();
-							absencesByMonth.put(month, absenceInfo);
-						}
-						
-						Map<String, StudentAttendance> attsForDate = atts.get(date);
-						if(attsForDate!=null) {
-							for(StudentAttendance att : attsForDate.values()) {
-								if(std.getOid().equals(att.getStudentOid())) {
-									absenceInfo.studentAbsences++;
-								}
-								absenceInfo.peerAbsences += 1.0 / ((double)gradeLevelSize);
-							}
-						}
+				Map<String, Collection<SisStudent>> studentsByGradeLevel = sklToGradeLevelToStdEntry.getValue();
+				for(Entry<String, Collection<SisStudent>> studentsByGradeLevelEntry : studentsByGradeLevel.entrySet()) {
+					String gradeLevel = studentsByGradeLevelEntry.getKey();
+					
+					X2Criteria studentCountCriteria = new X2Criteria();
+			        studentCountCriteria.addEqualTo(SisStudent.COL_GRADE_LEVEL, gradeLevel);
+			        studentCountCriteria.addEqualTo(SisStudent.COL_SCHOOL_OID, sklOid);
+			        studentCountCriteria.addEqualTo(SisStudent.COL_ENROLLMENT_STATUS, activeCode);
+			        BeanQuery studentCountQuery = new BeanQuery(SisStudent.class, studentCountCriteria);
+			        int gradeLevelSize = getBroker().getCount(studentCountQuery);
+	
+					X2Criteria attendanceCriteria = new X2Criteria();
+					attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().gradeLevel().toString(), gradeLevel);
+					attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().schoolOid().toString(), sklOid);
+					attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.student().enrollmentStatus().toString(), activeCode);
+					attendanceCriteria.addGreaterOrEqualThan(SisBeanPaths.STUDENT_ATTENDANCE.date().toString(), startDate);
+					attendanceCriteria.addLessOrEqualThan(SisBeanPaths.STUDENT_ATTENDANCE.date().toString(), endDate);
+					if(excludeExcused) {
+						attendanceCriteria.addEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.excusedIndicator().toString(), Boolean.FALSE);
 					}
 					
-					JFreeChart chart = createChart(absencesByMonth, std.getPerson().getFirstName());
-					try {
-						Class rendererClass = Class.forName("net.sf.jasperreports5.renderers.JFreeChartRenderer");
-						Object renderer = rendererClass.getConstructor(JFreeChart.class).newInstance(chart);
-						stdToRowMap.get(std).put(COL_COMPARISON_CHART_PNG, renderer);
-					} catch(Exception e) {
-						logToolMessage(Level.WARNING, LoggerUtils.convertThrowableToString(e), false);
+					BeanQuery attendanceQuery = new BeanQuery(StudentAttendance.class, attendanceCriteria);			
+					Map<PlainDate, Map<String, StudentAttendance>> atts = getBroker().getNestedMapByQuery(attendanceQuery, StudentAttendance.COL_DATE, StudentAttendance.COL_OID, 10, 10);
+	
+					for(SisStudent std : studentsByGradeLevelEntry.getValue()) {
+						int totalAbsences = 0;
+						int totalStudentAbsences = 0;
+						LinkedHashMap<Month, AbsenceComparison> absencesByMonth = new LinkedHashMap<>();
+						for(PlainDate date = startDate; date.compareTo(endDate)<=0; date = DateUtils.add(date, 1)) {
+							Month month = Month.getMonth(date);
+							AbsenceComparison absenceInfo = absencesByMonth.get(month);
+							if(absenceInfo==null) {
+								absenceInfo = new AbsenceComparison();
+								absencesByMonth.put(month, absenceInfo);
+							}
+							
+							Map<String, StudentAttendance> attsForDate = atts.get(date);
+							if(attsForDate!=null) {
+								for(StudentAttendance att : attsForDate.values()) {
+									if(std.getOid().equals(att.getStudentOid())) {
+										absenceInfo.studentAbsences++;
+										totalStudentAbsences++;
+									}
+									totalAbsences++;
+									absenceInfo.peerAbsences += 1.0 / ((double)gradeLevelSize);
+								}
+							}
+						}
+						
+						AbsenceComparison totalComparison = new AbsenceComparison();
+						totalComparison.studentAbsences = totalStudentAbsences;
+						totalComparison.peerAbsences = ((double)totalAbsences) / ((double)(gradeLevelSize));
+						
+						JFreeChart chartByMonth = createMonthChart(absencesByMonth, std.getPerson().getFirstName());
+						JFreeChart chartTotal = createTotalChart(totalComparison, std.getPerson().getFirstName());
+	
+						if(Boolean.TRUE.equals(monthlyChart))
+							stdToRowMap.get(std).put(COL_COMPARISON_MONTH_CHART_PNG, createRenderer(chartByMonth));
+						if(Boolean.TRUE.equals(totalChart))
+							stdToRowMap.get(std).put(COL_COMPARISON_TOTAL_CHART_PNG, createRenderer(chartTotal));
 					}
 				}
 			}
@@ -197,14 +218,43 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
 
 		return data;
 	}
+	
+	/**
+	 * Wrap a chart in a JFreeChartRenderer.
+	 * <p>
+	 * This method only exists because the XR jar does not include the net.sf.jasperreports5.renderers.JFreeChartRenderer class.
+	 * 
+	 * @param chart
+	 * @return
+	 */
+	private Object createRenderer(JFreeChart chart) {
+		try {
+			Class rendererClass = Class.forName("net.sf.jasperreports5.renderers.JFreeChartRenderer");
+			Object renderer = rendererClass.getConstructor(JFreeChart.class).newInstance(chart);
+			return renderer;
+		} catch(Exception e) {
+			logToolMessage(Level.WARNING, LoggerUtils.convertThrowableToString(e), false);
+			return null;
+		}
+	}
 
-	private JFreeChart createChart(LinkedHashMap<Month, AbsenceComparison> comparisonMap,String studentFirstName) {
+	private JFreeChart createMonthChart(LinkedHashMap<Month, AbsenceComparison> comparisonMap,String studentFirstName) {
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
         for(Entry<Month, AbsenceComparison> entry : comparisonMap.entrySet()) {
         	dataset.addValue( entry.getValue().studentAbsences, studentFirstName, entry.getKey());
         	dataset.addValue( entry.getValue().peerAbsences, "Peers", entry.getKey());
         }
-	    
+	    return createChart(dataset);
+	}
+
+	private JFreeChart createTotalChart(AbsenceComparison comparison,String studentFirstName) {
+        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
+    	dataset.addValue( comparison.studentAbsences, studentFirstName, "");
+    	dataset.addValue( comparison.peerAbsences, "Peers", "");
+	    return createChart(dataset);
+	}
+	
+	private JFreeChart createChart(DefaultCategoryDataset dataset) {
         JFreeChart chart = ChartFactory.createBarChart(
             "",         // chart title
             "",               // domain axis label
@@ -230,6 +280,25 @@ public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
         renderer.setSeriesOutlinePaint(1, Color.black);
         renderer.setDrawBarOutline(true);
         renderer.setShadowVisible(false);
+        
+        //not sure why this is necessary, but some customers reported seeing
+        //default blue bars instead of our custom B&W patterns
+        renderer.setBarPainter(new BarPainter() {
+
+			@Override
+			public void paintBar(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base) {
+				g2.setPaint(renderer.getSeriesPaint(row));
+				g2.fill(bar);
+				g2.setPaint(renderer.getSeriesOutlinePaint(row));
+				g2.draw(bar);
+			}
+
+			@Override
+			public void paintBarShadow(Graphics2D g2, BarRenderer renderer, int row, int column, RectangularShape bar, RectangleEdge base, boolean pegShadow) {
+				//no shadow for us
+			}
+        	
+        });
 
         final CategoryAxis domainAxis = plot.getDomainAxis();
         domainAxis.setCategoryLabelPositions(
@@ -934,17 +1003,31 @@ class AttendanceWarningLetterData extends ReportJavaSourceNet {
      */
     private String convertToString(Object value) {
         String result = "";
+        
+        // This method was modified from the original portable report only because
+        // the aspen-xr jar doesn't include the ConverterFactory class.
 
+        String converterName = null;
+        
         if (value != null) {
             if (value instanceof String) {
                 result = (String) value;
             } else if (value instanceof PlainDate || value instanceof Date) {
-                Converter dateConverter = ConverterFactory.getConverterForClass(Converter.DATE_CONVERTER, getLocale());
-                result = dateConverter.javaToString(value);
-            } else if (value instanceof BigDecimal) {
-                Converter decimalConverter =
-                        ConverterFactory.getConverterForClass(Converter.BIG_DECIMAL_CONVERTER, getLocale());
-                result = decimalConverter.javaToString(value);
+            	converterName = Converter.DATE_CONVERTER;
+            } else if(value instanceof BigDecimal) {
+            	converterName = Converter.BIG_DECIMAL_CONVERTER;
+            }
+            
+            if(converterName!=null) {
+            	Converter converter;
+            	try {
+	            	Class c = Class.forName("com.x2dev.utils.converters.ConverterFactory");
+	            	Method method = c.getMethod("getConverterForClass", String.class, Locale.class);
+	            	converter = (Converter) method.invoke(converterName, getLocale());
+            	} catch(Exception e) {
+            		throw new RuntimeException(e);
+            	}
+                result = converter.javaToString(value);
             }
         }
 
