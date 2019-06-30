@@ -2,8 +2,6 @@ package org.abc.util;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -23,38 +21,18 @@ public class RandomSampleTest extends TestCase {
 	 */
 	@Test
 	public void testDistribution() {
-		RandomSample ideal = new RandomSample(0) {
-
-			@Override
-			public <T> Collection<T> create(Iterator<T> iter, int size) {
-				List<T> c = new ArrayList<>();
-				while(iter.hasNext()) {
-					c.add(iter.next());
-				}
-				Collections.shuffle(c, random);
-				return c.subList(0, size);
-			}
-			
-		};
-		
 		List<Integer> elements = new ArrayList<>();
-		for(int a = 0; a<20; a++) {
+		for(int a = 0; a<100; a++) {
 			elements.add(a);
 		}
-		
-		Map<Integer, AtomicInteger> idealFrequencyMap = createFrequencyMap(ideal, elements);
-		double idealStdDev = getStandardDeviation(idealFrequencyMap.values());
-		
-		Map<Integer, AtomicInteger> actualFrequencyMap = createFrequencyMap(new RandomSample(), elements);
-		double actualStdDev = getStandardDeviation(actualFrequencyMap.values());
-		
-		assertTrue("the actual standard deviation ("+actualStdDev+") should be very similar to the ideal standard deviation ("+idealStdDev+")", actualStdDev < idealStdDev * 1.25);
-	
+
+		final int sampleSize = 10;
+		Map<Integer, AtomicInteger> actualFrequencyMap = createFrequencyMap(elements, sampleSize);
 		int avg = getSum(actualFrequencyMap.values()) / actualFrequencyMap.size();
 
 		for(Entry<Integer, AtomicInteger> entry : actualFrequencyMap.entrySet()) {
 			int diff = Math.abs(avg - entry.getValue().intValue());
-			assertTrue("the value "+entry.getKey()+" is too far from the average "+avg, diff < actualStdDev*2);
+			assertTrue("the key/value "+entry+" is too far from the average "+avg, diff < avg * .10);
 		}
 	}
 	
@@ -66,10 +44,12 @@ public class RandomSampleTest extends TestCase {
 		return sum;
 	}
 
-	private Map<Integer, AtomicInteger> createFrequencyMap(RandomSample randomSample,List<Integer> elements) {
+	private Map<Integer, AtomicInteger> createFrequencyMap(List<Integer> elements, int sampleSize) {
+		RandomSample<Integer> randomSample = new RandomSample<Integer>(sampleSize, 0);
 		Map<Integer, AtomicInteger> frequencyMap = new TreeMap<>();
 		for(int a = 0; a<10000; a++) {
-			Collection<Integer> samples = randomSample.create(elements.iterator(), 10);
+			randomSample.addAll(elements);
+			Collection<Integer> samples = randomSample.getSamples();
 			for(Integer sample : samples) {
 				AtomicInteger occurrence = frequencyMap.get(sample);
 				if(occurrence==null) {
@@ -79,21 +59,7 @@ public class RandomSampleTest extends TestCase {
 				occurrence.incrementAndGet();
 			}
 		}
-		return frequencyMap;
-	}
-
-	private double getStandardDeviation(Collection<AtomicInteger> values) {
-		double avg = 0;
-		for(Number v : values) {
-			avg += v.doubleValue();
-		}
-		avg = avg / values.size();
 		
-		double sigmaSquared = 0;
-		for(Number v : values) {
-			sigmaSquared += (v.doubleValue() - avg) * (v.doubleValue() - avg);
-		}
-		sigmaSquared = sigmaSquared / values.size();
-		return Math.sqrt(sigmaSquared);
+		return frequencyMap;
 	}
 }

@@ -1,83 +1,83 @@
 package org.abc.util;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 
 /**
- * This helps collect a random subset of a large iterator.
+ * This helps collect a random subset of a large group of elements of unknown size.
  * <p>
  * For example: suppose you have an iterator that will iterate over
  * one million strings, and you want to randomly collect 100 of them.
+ * <p>
+ * An inefficient implementation of this basic idea would resemble:
+ * <code>
+ * List&lt;T> c = new ArrayList&lt;>();
+ * while(iter.hasNext()) {
+ * 	c.add(iter.next());
+ * }
+ * Collections.shuffle(c, random);
+ * return c.subList(0, size);
+ * </code>
+ * <p>
+ * If we're iterating over 10 million elements, though, keeping all those elements in memory
+ * is unnecessarily wasteful if we only want a sample of 100 elements. This class makes
+ * sure we only maintain an internal list of a few elements that are randomly selected
+ * from the incoming data.
+ * 
  */
-public class RandomSample {
-	
-	protected final Random random;
-
-	/**
-	 * Create a RandomSample with a dynamic random seed.
-	 */
-	public RandomSample() {
-		this(System.currentTimeMillis());
-	}
-	
-	/**
-	 * Create a RandomSample with a specific random seed.
-	 */
-	public RandomSample(long randomSeed) {
-		this.random = new Random(randomSeed);
-	}
+public class RandomSample<T> {
 	
 	private static class Entry<T> {
 		double ranking;
 		T value;
 	}
 	
+	protected final Random random;
+	protected final int sampleCount;
+	protected final Entry<T>[] entries;
+	private int entriesIndex = 0;
+	private long totalInputCount = 0;
+
 	/**
-	 * Iterate over an unknown number of elements and create a
-	 * subset of a fixed size.
-	 * <p>
-	 * An inefficient implementation of this method would resemble:
-	 * <code>
-	 * List&lt;T> c = new ArrayList&lt;>();
-	 * while(iter.hasNext()) {
-	 * 	c.add(iter.next());
-	 * }
-	 * Collections.shuffle(c, random);
-	 * return c.subList(0, size);
-	 * </code>
-	 * <p>
-	 * However since the iterator may return millions of elements: it's a
-	 * waste of memory to store all the elements in a list. The current
-	 * implementation only stores at most size-many elements.
+	 * Create a RandomSample with a dynamic random seed.
 	 * 
-	 * @param iter an iterator of an unknown number of elements.
-	 * @param size the number of elements to collect in our subset.
-	 * @return a subset of data in the iterator.
+	 * @param sampleCount the number of elements to collect in our subset.
 	 */
-	public <T> Collection<T> create(Iterator<T> iter,int size) {
-		@SuppressWarnings("unchecked")
-		Entry<T>[] entries = new Entry[size];
-		int index = 0;
-		int entryCount = 0;
+	public RandomSample(int sampleCount) {
+		this(sampleCount, System.currentTimeMillis());
+	}
+	
+	/**
+	 * Create a RandomSample with a specific random seed.
+	 * 
+	 * @param sampleCount the number of elements to collect in our subset.
+	 * @param randomSeed the random seed used to randomize which entries get selected.
+	 */
+	@SuppressWarnings("unchecked")
+	public RandomSample(int sampleCount,long randomSeed) {
+		this.random = new Random(randomSeed);
+		this.sampleCount = sampleCount;
+		entries = new Entry[sampleCount];
+	}
+	
+	/**
+	 * Add all the elements in the Iterable to this RandomSample.
+	 */
+	public void addAll(Iterable<T> iterable) {
+		Iterator<T> iter = iterable.iterator();
 		while(iter.hasNext()) {
 			T e = iter.next();
-			double rank = random.nextDouble();
-			if(entries[index]==null) {
-				entries[index] = new Entry<>();
-				entries[index].ranking = rank;
-				entries[index].value = e;
-				entryCount++;
-			} else if(rank > entries[index].ranking) {
-				entries[index].ranking = rank;
-				entries[index].value = e;
-			}
-			index = (index+1)%size;
+			add(e);
 		}
-		
-		List<T> returnValue = new ArrayList<>(entryCount);
+	}
+	
+	/**
+	 * Return the current subset of samples.
+	 */
+	public synchronized List<T> getSamples() {
+		List<T> returnValue = new ArrayList<>(entriesIndex);
 		for(int a = 0; a<entries.length; a++) {
 			if(entries[a]!=null) {
 				returnValue.add(entries[a].value);
@@ -85,5 +85,43 @@ public class RandomSample {
 			}
 		}
 		return returnValue;
+	}
+	
+	/**
+	 * Process an element, and optionally add it to our subset of randomly sampled elements.
+	 * 
+	 * @param element the element to process/add.
+	 */
+	public synchronized void add(T element) {
+		totalInputCount++;
+		double rank = random.nextDouble();
+		if(entries[entriesIndex]==null) {
+			entries[entriesIndex] = new Entry<>();
+			entries[entriesIndex].ranking = rank;
+			entries[entriesIndex].value = element;
+			entriesIndex++;
+		} else if(rank > entries[entriesIndex].ranking) {
+			entries[entriesIndex].ranking = rank;
+			entries[entriesIndex].value = element;
+		}
+		entriesIndex = (entriesIndex+1)%entries.length;
+	}
+
+	/**
+	 * Return the number of elements that have been added by calling {@link #add(Object)}.
+	 * <p>
+	 * Note this may be in the millions (or higher), but the actual size of the list
+	 * returned by {@link #getSample()} will be a fixed size based on the value passed
+	 * to the constructor of this object.
+	 */
+	public long getTotalElementCount() {
+		return totalInputCount;
+	}
+
+	/**
+	 * The size of the list that {@link #getSamples()} will return.
+	 */
+	public int getSampleCount() {
+		return entriesIndex;
 	}
 }

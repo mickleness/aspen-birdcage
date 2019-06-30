@@ -6,6 +6,8 @@
 	<classpathentry kind="lib" path="lib/java-json.jar"/>
 	<classpathentry kind="lib" path="lib/junit-4.8.2.jar"/>
 	<classpathentry kind="lib" path="lib/servlet-api.jar"/>
+	<classpathentry kind="lib" path="lib/jfreechart-1.0.19.jar"/>
+	<classpathentry kind="lib" path="lib/jcommon-1.0.23.jar"/>
 	<classpathentry kind="lib" path="lib/aspen-xr.jar"/>
 	<classpathentry kind="lib" path="lib/PumpClasses.jar"/>
 	<classpathentry kind="lib" path="lib/customizations.jar"/>

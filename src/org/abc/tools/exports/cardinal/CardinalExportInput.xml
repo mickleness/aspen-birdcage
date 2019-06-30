@@ -1,0 +1,3 @@
+<tool-input>
+  <input name="includeTableRowCount" data-type="boolean" display-type="checkbox" display-name="Include Table Row Count" default-value="true" />
+</tool-input>
