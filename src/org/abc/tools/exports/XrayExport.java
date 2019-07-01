@@ -120,6 +120,8 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(net.sf.jasperreports3.engine.JRRewindableDataSource.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports5.engine.JRRewindableDataSource.class);
+		sourceCodeManager
+				.addClasses(net.sf.jasperreports5.renderers.JFreeChartRenderer.class);
 
 		// managers
 		sourceCodeManager
@@ -128,6 +130,34 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.follett.fsc.core.k12.business.PreferenceManager.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.EnrollmentManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.GraduationManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.AttendanceManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.ElementaryScheduleManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.GradeAverageManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.GradebookUpdateManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.GradePostManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.PdAttendanceManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.RecordAccessManagerSis.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.RubricStandardsInitializer.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.SisAnnouncementManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.SisStudentAlertManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.SisStudentManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.SpedNotificationManager.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.sis.model.business.StaffClassSectionManager.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.ConductManager.class);
 		sourceCodeManager
@@ -177,6 +207,8 @@ public class XrayExport extends ToolJavaSource {
 
 		// utils
 		sourceCodeManager.addClasses(com.x2dev.utils.Base64.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.utils.converters.ConverterFactory.class);
 		sourceCodeManager.addClasses(com.lowagie.text.pdf.codec.Base64.class);
 		sourceCodeManager.addClasses(com.x2dev.utils.DateUtils.class);
 		sourceCodeManager
@@ -241,6 +273,8 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.follett.fsc.core.framework.persistence.TempTable.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.framework.persistence.adjusters.DistinctAdjuster.class);
+		sourceCodeManager
+				.addClasses(com.follett.fsc.core.framework.persistence.RowResultIteratorBuilder.class);
 
 		String[] columns = { SisDataTable.COL_CLASS_NAME };
 		ColumnQuery query = new ColumnQuery(SisDataTable.class, columns,
