@@ -15,7 +15,6 @@ import java.awt.geom.Point2D;
 import java.awt.geom.RectangularShape;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Date;
@@ -29,7 +28,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.logging.Level;
@@ -80,6 +78,7 @@ import com.x2dev.sis.model.beans.path.SisBeanPaths;
 import com.x2dev.utils.DateUtils;
 import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.converters.Converter;
+import com.x2dev.utils.converters.ConverterFactory;
 import com.x2dev.utils.types.PlainDate;
 
 public class AttendanceWarningLetter2 extends AttendanceWarningLetterData {
@@ -1122,10 +1121,6 @@ class AttendanceWarningLetterData extends ReportJavaSourceNet {
 	private String convertToString(Object value) {
 		String result = "";
 
-		// This method was modified from the original portable report only
-		// because
-		// the aspen-xr jar doesn't include the ConverterFactory class.
-
 		String converterName = null;
 
 		if (value != null) {
@@ -1138,17 +1133,8 @@ class AttendanceWarningLetterData extends ReportJavaSourceNet {
 			}
 
 			if (converterName != null) {
-				Converter converter;
-				try {
-					Class c = Class
-							.forName("com.x2dev.utils.converters.ConverterFactory");
-					Method method = c.getMethod("getConverterForClass",
-							String.class, Locale.class);
-					converter = (Converter) method.invoke(converterName,
-							getLocale());
-				} catch (Exception e) {
-					throw new RuntimeException(e);
-				}
+				Converter converter = ConverterFactory.getConverterForClass(
+						converterName, getLocale());
 				result = converter.javaToString(value);
 			}
 		}
