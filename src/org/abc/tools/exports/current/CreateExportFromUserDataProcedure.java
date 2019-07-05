@@ -11,12 +11,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Random;
 import java.util.logging.Level;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 import org.abc.tools.Tool;
+import org.abc.tools.exports.AbstractCustomFileExtensionTool;
 import org.abc.util.BeanPathUtils;
 import org.apache.ojb.broker.metadata.FieldHelper;
 import org.apache.ojb.broker.query.Criteria;
@@ -44,7 +44,6 @@ import com.follett.fsc.core.k12.beans.ToolSourceCode;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.beans.path.BeanColumnPath;
 import com.follett.fsc.core.k12.business.ValidationError;
-import com.follett.fsc.core.k12.tools.ToolJavaSource;
 import com.follett.fsc.core.k12.web.ContextList;
 import com.follett.fsc.core.k12.web.UserDataContainer;
 import com.follett.fsc.core.k12.web.WebUtils;
@@ -71,7 +70,8 @@ import com.x2dev.utils.types.PlainDate;
 @Tool(id = "ABC-CREATE-EXPORT", name = "Create Export", input = "CreateExportFromUserdataProcedureInput.xml", type = "procedure", comment = "This creates a new Aspen export based on the current query and field set.", nodes = {
 		"key=\"student.std.list\" org1-view=\"true\" school-view=\"true\"",
 		"key=\"staff.staff.list\" org1-view=\"true\" school-view=\"true\"" })
-public class CreateExportFromUserDataProcedure extends ToolJavaSource {
+public class CreateExportFromUserDataProcedure extends
+		AbstractCustomFileExtensionTool {
 
 	private static final long serialVersionUID = 1L;
 
@@ -192,17 +192,10 @@ public class CreateExportFromUserDataProcedure extends ToolJavaSource {
 	 */
 	ColumnQuery columnQuery;
 
-	String fileExtension;
-
 	// these fields relate to creating a new ImportExportDefinition
 
 	String newExportName, newExportID;
 	boolean isCreateNewExport;
-
-	/**
-	 * The file name of the output of this tool.
-	 */
-	private String customFileName;
 
 	@Override
 	protected void run() throws Exception {
@@ -227,7 +220,7 @@ public class CreateExportFromUserDataProcedure extends ToolJavaSource {
 	 */
 	@SuppressWarnings("rawtypes")
 	protected void exportData() throws Exception {
-		FileType fileType = FileType.forFileExtension(fileExtension);
+		FileType fileType = FileType.forFileExtension(getFileExtension());
 
 		List<String> columnNames = new ArrayList<>();
 		for (int a = 0; a < fields.size(); a++) {
@@ -467,13 +460,13 @@ public class CreateExportFromUserDataProcedure extends ToolJavaSource {
 			if (StringUtils.isEmpty(queryStr) && StringUtils.isEmpty(fieldsStr)) {
 				initializeUsingCurrentState(userData);
 				isCreateNewExport = true;
-				fileExtension = "html";
+				setFileExtension("html");
 			} else if ((!StringUtils.isEmpty(queryStr))
 					&& (!StringUtils.isEmpty(fieldsStr))) {
 				initialize(queryStr, fieldsStr);
 				isCreateNewExport = false;
-				fileExtension = (String) getParameters().get(
-						PARAM_FILE_EXTENSION);
+				setFileExtension((String) getParameters().get(
+						PARAM_FILE_EXTENSION));
 			} else {
 				throw new RuntimeException("The parameters \"" + PARAM_FIELDS
 						+ "\" and \"" + PARAM_QUERY
@@ -486,31 +479,6 @@ public class CreateExportFromUserDataProcedure extends ToolJavaSource {
 			throw e;
 		} catch (Exception e) {
 			throw new X2BaseException(e);
-		}
-	}
-
-	@Override
-	protected void initialize() throws X2BaseException {
-		super.initialize();
-		initializeFileInfo();
-	}
-
-	@Override
-	public String getCustomFileName() {
-		initializeFileInfo();
-		if (customFileName != null) {
-			return customFileName;
-		}
-		return super.getCustomFileName();
-	}
-
-	private void initializeFileInfo() {
-		if (customFileName == null) {
-			FileType f = FileType.forFileExtension(fileExtension);
-			Random random = new Random();
-			customFileName = "export" + random.nextInt(1000) + "."
-					+ f.fileExtension;
-			getJob().getInput().setFormat(f.toolInputType);
 		}
 	}
 

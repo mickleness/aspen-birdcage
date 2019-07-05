@@ -3,9 +3,9 @@ package org.abc.tools.exports.current;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 import org.abc.tools.Tool;
+import org.abc.tools.exports.AbstractCustomFileExtensionTool;
 import org.abc.util.BeanPathUtils;
 
 import com.follett.cust.cub.ExportHelperCub.FileType;
@@ -17,7 +17,6 @@ import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.beans.path.BeanColumnPath;
 import com.follett.fsc.core.k12.business.dictionary.DataDictionaryField;
-import com.follett.fsc.core.k12.tools.ToolJavaSource;
 import com.follett.fsc.core.k12.web.ContextList;
 import com.follett.fsc.core.k12.web.UserDataContainer;
 import com.x2dev.utils.KeyValuePair;
@@ -33,7 +32,7 @@ import com.x2dev.utils.X2BaseException;
 @Tool(id = "ABC-CURRENT-TBL-EXP", name = "Export to File", input = "CurrentTableExportInput.xml", type = "procedure", comment = "This exports the current table data to a CSV or XLS file.", nodes = {
 		"key=\"student.std.list\" org1-view=\"true\" school-view=\"true\"",
 		"key=\"staff.staff.list\" org1-view=\"true\" school-view=\"true\"" })
-public class CurrentTableExport extends ToolJavaSource {
+public class CurrentTableExport extends AbstractCustomFileExtensionTool {
 	private static final long serialVersionUID = 1L;
 
 	/**
@@ -47,16 +46,6 @@ public class CurrentTableExport extends ToolJavaSource {
 	BeanQuery beanQuery;
 
 	/**
-	 * The file name of the output of this tool.
-	 */
-	private String customFileName;
-
-	/**
-	 * The file extension of the output of this tool.
-	 */
-	private String fileExtension;
-
-	/**
 	 * A list of column java names and header names. So for a student the first
 	 * value might be "nameView" (which is how we retrieve it from the bean),
 	 * and the second value would be "Name" (which is how the column in the
@@ -67,7 +56,7 @@ public class CurrentTableExport extends ToolJavaSource {
 	@Override
 	protected void run() throws Exception {
 		try {
-			FileType fileType = FileType.forFileExtension(fileExtension);
+			FileType fileType = FileType.forFileExtension(getFileExtension());
 
 			List<String> columnNames = new ArrayList<>();
 			for (int a = 0; a < columns.size(); a++) {
@@ -149,38 +138,14 @@ public class CurrentTableExport extends ToolJavaSource {
 
 			beanQuery = currentList.getQuery();
 
-			fileExtension = (String) getParameters().get(PARAM_FILE_EXTENSION);
-			if (fileExtension == null)
-				fileExtension = "csv";
+			String ext = (String) getParameters().get(PARAM_FILE_EXTENSION);
+			if (ext == null)
+				ext = "csv";
+			setFileExtension(ext);
 		} catch (X2BaseException e) {
 			throw e;
 		} catch (Exception e) {
 			throw new X2BaseException(e);
-		}
-	}
-
-	@Override
-	protected void initialize() throws X2BaseException {
-		super.initialize();
-		initializeFileInfo();
-	}
-
-	@Override
-	public String getCustomFileName() {
-		initializeFileInfo();
-		if (customFileName != null) {
-			return customFileName;
-		}
-		return super.getCustomFileName();
-	}
-
-	private void initializeFileInfo() {
-		if (customFileName == null) {
-			FileType f = FileType.forFileExtension(fileExtension);
-			Random random = new Random();
-			customFileName = "export" + random.nextInt(1000) + "."
-					+ f.fileExtension;
-			getJob().getInput().setFormat(f.toolInputType);
 		}
 	}
 }
