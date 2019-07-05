@@ -1,0 +1,10 @@
+<tool-input>
+
+ <input name="fileExtension" data-type="string" display-type="select" display-name="File Type">
+  <option value="xls" display-name="xls"/>
+  <option value="csv" display-name="csv"/>
+ </input>
+ <input name="exportName" data-type="string" display-type="text" width="100" display-name="Export Name" default-value="" required="true"/>
+ <input name="exportID" data-type="string" display-type="text" width="20" display-name="Export ID" default-value="" required="true"/>
+
+</tool-input>
