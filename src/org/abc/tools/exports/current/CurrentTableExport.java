@@ -16,17 +16,20 @@ import java.util.logging.Level;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.abc.tools.Tool;
 import org.apache.ojb.broker.metadata.FieldHelper;
 import org.apache.ojb.broker.query.Criteria;
 import org.apache.ojb.broker.query.Query;
 
 import com.follett.cust.cub.ExportHelperCub.FileType;
 import com.follett.cust.io.Base64;
-import com.follett.cust.io.IndentedPrintStream;
 import com.follett.cust.io.exporter.RowExporter;
 import com.follett.cust.io.exporter.RowExporter.CellGroup;
-import com.follett.cust.io.html.HtmlComponent;
-import com.follett.cust.io.html.HtmlEncoder;
+import com.follett.cust.io.html.Checklist;
+import com.follett.cust.io.html.Checklist.NoteType;
+import com.follett.cust.io.html.Checklist.SummaryItem;
+import com.follett.cust.io.html.HtmlChecklist;
+import com.follett.cust.io.html.HtmlImage;
 import com.follett.cust.io.html.HtmlPage;
 import com.follett.fsc.core.framework.persistence.BeanQuery;
 import com.follett.fsc.core.framework.persistence.ColumnQuery;
@@ -48,15 +51,35 @@ import com.follett.fsc.core.k12.business.ValidationError;
 import com.follett.fsc.core.k12.tools.ToolJavaSource;
 import com.follett.fsc.core.k12.web.ContextList;
 import com.follett.fsc.core.k12.web.UserDataContainer;
+import com.follett.fsc.core.k12.web.WebUtils;
 import com.x2dev.utils.StringUtils;
 import com.x2dev.utils.ThreadUtils;
 import com.x2dev.utils.X2BaseException;
 import com.x2dev.utils.types.PlainDate;
 
 /**
- * This exports a ColumnQuery that can come from either the current user's view
- * or from a serialized parameter.
+ * This can either export a table of data or it can create a new export tool to
+ * export the same data.
+ * <p>
+ * This source code can do three things depending on the input parameters:
+ * <ol>
+ * <li>If the parameters "exportName" and "exportID" are defined: this will
+ * create a new export. This new export will capture the current query/field set
+ * and embed them as parameters in the new export. The next export will have
+ * exactly the same source code as this export, but the input parameters will be
+ * set up in such a way that it executes as the following:</li>
+ * <li>If a query and field set are defined: this will export a table of data
+ * reflecting that query/field set.</li>
+ * <li>If neither of the above conditions are met: this will export the current
+ * query/field set.</li>
+ * </ol>
+ * <p>
+ * All exports support either XLS or CSV data.
+ * 
  */
+@Tool(id = "ABC-CURRENT-TBL-EXP", name = "Export Current Table", input = "CurrentTableExportInput.xml", type = "procedure", comment = "This takes the current table data in front of you can and can either create a new Aspen export that can regenerate this data or export this data as a CSV or XLS file.", nodes = {
+		"key=\"student.std.list\" org1-view=\"true\" school-view=\"true\"",
+		"key=\"staff.staff.list\" org1-view=\"true\" school-view=\"true\"" })
 public class CurrentTableExport extends ToolJavaSource {
 
 	private static final long serialVersionUID = 1L;
@@ -119,6 +142,7 @@ public class CurrentTableExport extends ToolJavaSource {
 	 *         "person.mailingAddress.city"
 	 * @throws BeanPathValidationException
 	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public static <B extends X2BaseBean> BeanPath<B, ?, ?> getBeanPath(
 			Class<B> beanType, final String beanPath)
 			throws BeanPathValidationException {
@@ -164,6 +188,19 @@ public class CurrentTableExport extends ToolJavaSource {
 		return lastPath;
 	}
 
+	/**
+	 * Create a ColumnQuery.
+	 * 
+	 * @param persistenceKey
+	 * @param fields
+	 *            the fields this query will retrieve
+	 * @param baseClass
+	 * @param criteria
+	 * @param sortBy
+	 *            a list of FieldHelpers indicating how to sort this query.
+	 * @return
+	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	private static ColumnQuery createColumnQuery(PersistenceKey persistenceKey,
 			List<BeanColumnPath> fields, Class baseClass, Criteria criteria,
 			List<FieldHelper> sortBy) {
@@ -214,6 +251,7 @@ public class CurrentTableExport extends ToolJavaSource {
 	/**
 	 * A list of the fields to include in this export.
 	 */
+	@SuppressWarnings("rawtypes")
 	List<BeanColumnPath> fields = new ArrayList<>();
 
 	/**
@@ -224,25 +262,48 @@ public class CurrentTableExport extends ToolJavaSource {
 	 */
 	ColumnQuery columnQuery;
 
+	// these fields relate to creating a new ImportExportDefinition
+
 	String newExportName, newExportID;
 	boolean isCreateNewExport;
 
-	String customFileName, fileExtension;
+	/**
+	 * The file name of the output of this tool.
+	 */
+	private String customFileName;
+
+	/**
+	 * The file extension of the output of this tool.
+	 */
+	private String fileExtension;
 
 	@Override
 	protected void run() throws Exception {
-		if (isCreateNewExport) {
-			createNewExport();
-		} else {
-			exportData();
+		try {
+			if (isCreateNewExport) {
+				createNewExport();
+			} else {
+				exportData();
+			}
+		} catch (Exception e) {
+			addCustomErrorMessage(e.getMessage());
+			throw e;
 		}
 	}
 
+	/**
+	 * Create a new ImportExportDefinition.
+	 */
+	@SuppressWarnings("unused")
 	protected void createNewExport() throws Exception {
 		getBroker().beginTransaction();
 		boolean committedTransaction = false;
 		try {
-			ImportExportDefinition ied = getExport();
+			// this line lets us overwrite existing IED's...
+			// ... but that breaks a do-no-harm usability rule.
+			// ImportExportDefinition ied = getPreexistingExport();
+
+			ImportExportDefinition ied = null;
 			ToolSourceCode tsc = null;
 			if (ied == null) {
 				ied = X2BaseBean.newInstance(ImportExportDefinition.class,
@@ -317,7 +378,11 @@ public class CurrentTableExport extends ToolJavaSource {
 		}
 	}
 
-	private ImportExportDefinition getExport() {
+	/**
+	 * Returns the preexisting ImportExportDefinition with the requested
+	 * name/ID, or null if no such export exists.
+	 */
+	private ImportExportDefinition getPreexistingExport() {
 		X2Criteria criteria = new X2Criteria();
 		criteria.addEqualTo(ImportExportDefinition.COL_NAME, newExportName);
 		criteria.addEqualTo(ImportExportDefinition.COL_ID, newExportID);
@@ -325,40 +390,66 @@ public class CurrentTableExport extends ToolJavaSource {
 		return (ImportExportDefinition) getBroker().getBeanByQuery(q);
 	}
 
+	/**
+	 * Publish HTML describing this procedure's results (either as a success or
+	 * as a failure).
+	 * 
+	 * @param errors
+	 *            any ValidationErrors that occurred that need relaying
+	 * @param tsc
+	 *            the ToolSourceCode that was created
+	 * @param ied
+	 *            the ImportExportDefinition that was created.
+	 * 
+	 * @throws IOException
+	 */
 	private void publishNewExportHTMLResults(
 			final List<ValidationError> errors, final ToolSourceCode tsc,
 			final ImportExportDefinition ied) throws IOException {
+
+		Checklist checklist = new Checklist();
+		SummaryItem summaryItem = checklist.addSummaryItem(0, "summary");
+		if (errors.isEmpty()) {
+			summaryItem.setTitle("Export Successfully Created");
+			summaryItem.setImage(HtmlImage.GENERIC_PASS_48);
+			summaryItem.addNote(NoteType.PLAIN, "The export \"" + ied.getName()
+					+ "\" (ID \"" + ied.getId()
+					+ "\") was successfully created.", true, true);
+		} else {
+			summaryItem.setTitle("No Export Created");
+			summaryItem.setImage(HtmlImage.GENERIC_FAIL_48);
+			summaryItem
+					.addNote(
+							NoteType.PLAIN,
+							"The export \""
+									+ ied.getName()
+									+ "\" (ID \""
+									+ ied.getId()
+									+ "\") could not be created because of the following errors:",
+							true, true);
+			for (ValidationError e : errors) {
+				summaryItem
+						.addNote(NoteType.ERROR, WebUtils.getMessage(e,
+								getBroker().getPersistenceKey()), true, true);
+			}
+		}
+
 		try (OutputStream out = getResultHandler().getOutputStream()) {
 			try (HtmlPage page = new HtmlPage(out, "Results")) {
-				page.add(new HtmlComponent() {
-
-					@Override
-					public void installDependencies(HtmlPage page) {
-						// intentionally empty
-					}
-
-					@Override
-					public void writeHtml(HtmlPage page, String id,
-							IndentedPrintStream stream) {
-						if (errors.isEmpty()) {
-							stream.println("Successfully saved export "
-									+ ied.getName() + " (" + ied.getId()
-									+ "). " + ied.getOid() + " / "
-									+ tsc.getOid());
-						} else {
-							stream.println("Errors occurred saving the new export \""
-									+ ied.getName()
-									+ "\" (no changes were saved):\n"
-									+ HtmlEncoder.encode(errors.toString()));
-						}
-					}
-
-				});
+				page.add(new HtmlChecklist(checklist, false));
 			}
 
 		}
 	}
 
+	/**
+	 * Export a query as a file.
+	 * <p>
+	 * This pipes the data directly into the file one row at a time.
+	 * 
+	 * @throws Exception
+	 */
+	@SuppressWarnings("rawtypes")
 	protected void exportData() throws Exception {
 		FileType fileType = FileType.forFileExtension(fileExtension);
 
@@ -387,13 +478,11 @@ public class CurrentTableExport extends ToolJavaSource {
 
 					while (iter.hasNext()) {
 						ThreadUtils.checkInterrupt();
-						@SuppressWarnings("unchecked")
 						Object[] row = (Object[]) iter.next();
 
 						// the row array may contain a few extra oids used for
-						// joins
-						// we want to narrow this down to ONLY the values we're
-						// outputting:
+						// joins we want to narrow this down to ONLY the values
+						// we're outputting:
 						List<Object> reducedRow = new ArrayList<>(row.length);
 						for (int a = 0; a < columns.length; a++) {
 							if (fieldStrings.contains(columns[a]))
@@ -509,6 +598,7 @@ public class CurrentTableExport extends ToolJavaSource {
 	 * @param userData
 	 *            the UserData used to identify the current fields/query.
 	 */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	protected void initializeUsingCurrentState(UserDataContainer userData) {
 		ContextList currentList = userData.getCurrentList();
 
@@ -543,6 +633,7 @@ public class CurrentTableExport extends ToolJavaSource {
 	 *            a comma-separated list of fields
 	 * @throws Exception
 	 */
+	@SuppressWarnings({ "unchecked", "rawtypes" })
 	protected void initialize(String queryParam, String fieldsParam)
 			throws Exception {
 		ColumnQuery q = (ColumnQuery) deserializeBase64(queryParam);

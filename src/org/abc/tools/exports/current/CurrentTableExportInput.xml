@@ -1,0 +1,15 @@
+<tool-input>
+
+<tab name="Export Data">
+ <input name="fileExtension" data-type="striing" display-type="select" display-name="File Type">
+  <option value="xls" display-name="xls"/>
+  <option value="csv" display-name="csv"/>
+ </input>
+</tab>
+
+<tab name="Create Export">
+<input name="exportName" data-type="string" display-type="text" width="100" display-name="Export Name"  default-value="" required="false"/>
+<input name="exportID" data-type="string" display-type="text" width="20" display-name="Export ID"  default-value="" required="false"/>
+</tab>
+
+</tool-input>
