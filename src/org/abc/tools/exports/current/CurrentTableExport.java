@@ -2,6 +2,7 @@ package org.abc.tools.exports.current;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
@@ -10,32 +11,47 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
+import java.util.logging.Level;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+import org.apache.ojb.broker.metadata.FieldHelper;
 import org.apache.ojb.broker.query.Criteria;
+import org.apache.ojb.broker.query.Query;
 
 import com.follett.cust.cub.ExportHelperCub.FileType;
 import com.follett.cust.io.Base64;
+import com.follett.cust.io.IndentedPrintStream;
 import com.follett.cust.io.exporter.RowExporter;
 import com.follett.cust.io.exporter.RowExporter.CellGroup;
+import com.follett.cust.io.html.HtmlComponent;
+import com.follett.cust.io.html.HtmlEncoder;
+import com.follett.cust.io.html.HtmlPage;
+import com.follett.fsc.core.framework.persistence.BeanQuery;
 import com.follett.fsc.core.framework.persistence.ColumnQuery;
 import com.follett.fsc.core.framework.persistence.RowResultIteratorBuilder;
+import com.follett.fsc.core.framework.persistence.X2Criteria;
+import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.FieldSet;
 import com.follett.fsc.core.k12.beans.FieldSetMember;
+import com.follett.fsc.core.k12.beans.ImportExportDefinition;
 import com.follett.fsc.core.k12.beans.ReportQueryIterator;
+import com.follett.fsc.core.k12.beans.ToolSourceCode;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.beans.path.BeanColumnPath;
 import com.follett.fsc.core.k12.beans.path.BeanPath;
 import com.follett.fsc.core.k12.beans.path.BeanPathValidationException;
 import com.follett.fsc.core.k12.beans.path.BeanTablePath;
 import com.follett.fsc.core.k12.business.ModelProperty;
+import com.follett.fsc.core.k12.business.ValidationError;
 import com.follett.fsc.core.k12.tools.ToolJavaSource;
 import com.follett.fsc.core.k12.web.ContextList;
 import com.follett.fsc.core.k12.web.UserDataContainer;
 import com.x2dev.utils.StringUtils;
 import com.x2dev.utils.ThreadUtils;
 import com.x2dev.utils.X2BaseException;
+import com.x2dev.utils.types.PlainDate;
 
 /**
  * This exports a ColumnQuery that can come from either the current user's view
@@ -103,7 +119,7 @@ public class CurrentTableExport extends ToolJavaSource {
 	 *         "person.mailingAddress.city"
 	 * @throws BeanPathValidationException
 	 */
-	public <B extends X2BaseBean> BeanPath<B, ?, ?> getBeanPath(
+	public static <B extends X2BaseBean> BeanPath<B, ?, ?> getBeanPath(
 			Class<B> beanType, final String beanPath)
 			throws BeanPathValidationException {
 		if (beanType == null) {
@@ -128,8 +144,10 @@ public class CurrentTableExport extends ToolJavaSource {
 				}
 			}
 			if (nextTable == null) {
-				throw new RuntimeException("Unabled to find term " + a + " ("
-						+ terms[a] + ")");
+				throw new RuntimeException("Unable to find field \"" + beanPath
+						+ "\" on table "
+						+ BeanTablePath.getTable(beanType).getDatabaseName()
+						+ " (failed on \"" + terms[a] + "\"");
 			}
 			table = nextTable;
 		}
@@ -139,9 +157,31 @@ public class CurrentTableExport extends ToolJavaSource {
 			lastPath = table.getColumn(lastTerm);
 		}
 		if (lastPath == null) {
-			throw new RuntimeException("Unabled to find term " + lastTerm);
+			throw new RuntimeException("Unable to find field \"" + beanPath
+					+ "\" on table "
+					+ BeanTablePath.getTable(beanType).getDatabaseName());
 		}
 		return lastPath;
+	}
+
+	private static ColumnQuery createColumnQuery(PersistenceKey persistenceKey,
+			List<BeanColumnPath> fields, Class baseClass, Criteria criteria,
+			List<FieldHelper> sortBy) {
+		if (fields.isEmpty())
+			throw new RuntimeException(
+					"Fields must be defined to construct the ColumnQuery");
+
+		RowResultIteratorBuilder builder = new RowResultIteratorBuilder(
+				persistenceKey, baseClass);
+		builder.addColumns(fields);
+
+		for (FieldHelper sortByHelper : sortBy) {
+			BeanColumnPath bcp = (BeanColumnPath) getBeanPath(baseClass,
+					sortByHelper.name);
+			builder.addOrderBy(bcp, sortByHelper.isAscending);
+		}
+
+		return builder.createColumnQuery(criteria);
 	}
 
 	/**
@@ -162,6 +202,16 @@ public class CurrentTableExport extends ToolJavaSource {
 	protected static String PARAM_FILE_EXTENSION = "fileExtension";
 
 	/**
+	 * This should resolve to the export name (if any)
+	 */
+	protected static String PARAM_NEW_EXPORT_NAME = "exportName";
+
+	/**
+	 * This should resolve to the export ID (if any)
+	 */
+	protected static String PARAM_NEW_EXPORT_ID = "exportID";
+
+	/**
 	 * A list of the fields to include in this export.
 	 */
 	List<BeanColumnPath> fields = new ArrayList<>();
@@ -174,20 +224,143 @@ public class CurrentTableExport extends ToolJavaSource {
 	 */
 	ColumnQuery columnQuery;
 
+	String newExportName, newExportID;
+	boolean isCreateNewExport;
+
+	String customFileName, fileExtension;
+
 	@Override
 	protected void run() throws Exception {
+		if (isCreateNewExport) {
+			createNewExport();
+		} else {
+			exportData();
+		}
+	}
 
-		String fileExtension = (String) getParameters().get(
-				PARAM_FILE_EXTENSION);
-		FileType fileType = FileType.forFileExtension(fileExtension);
-		if (fileType == null) {
-			if (StringUtils.isEmpty(fileExtension)) {
-				fileType = FileType.CSV;
+	protected void createNewExport() throws Exception {
+		getBroker().beginTransaction();
+		boolean committedTransaction = false;
+		try {
+			ImportExportDefinition ied = getExport();
+			ToolSourceCode tsc = null;
+			if (ied == null) {
+				ied = X2BaseBean.newInstance(ImportExportDefinition.class,
+						getBroker().getPersistenceKey());
+				tsc = X2BaseBean.newInstance(ToolSourceCode.class, getBroker()
+						.getPersistenceKey());
 			} else {
-				throw new IllegalArgumentException("Unsupported file type \""
-						+ fileType + "\"");
+				tsc = ied.getSourceCode();
+			}
+
+			String queryStr = serializeBase64(columnQuery);
+			String fieldsStr = StringUtils.convertCollectionToDelimitedString(
+					fields, ',');
+
+			// the field "fileExtension" is now "html", because this tool will
+			// produce an HTML summary. Right now we want the real target export
+			// format:
+			String exportFileExt = (String) getParameters().get(
+					PARAM_FILE_EXTENSION);
+
+			tsc.setInputDefinition("<tool-input>\n"
+					+ "\t<input name=\""
+					+ PARAM_QUERY
+					+ "\" data-type=\"string\"  display-type=\"hidden\" default-value=\""
+					+ queryStr
+					+ "\" />\n"
+					+ "\t<input name=\""
+					+ PARAM_FIELDS
+					+ "\" data-type=\"string\" display-type=\"text\" display-name=\"Fields\" default-value=\""
+					+ fieldsStr
+					+ "\" />\n"
+					+ "\t<input name=\"fileExtension\" data-type=\"string\" display-type=\"select\" display-name=\"File Type\" default-value=\""
+					+ exportFileExt + "\">\n"
+					+ "\t\t<option value=\"xls\" display-name=\"xls\"/>\n"
+					+ "\t\t<option value=\"csv\" display-name=\"csv\"/>\n"
+					+ "\t</input>\n" + "</tool-input>");
+
+			List<ValidationError> errors = new ArrayList<>();
+			errors.addAll(getBroker().saveBean(tsc));
+			tsc.setSourceCode(getJob().getTool().getSourceCode()
+					.getSourceCode());
+			tsc.setCompiledCode(getJob().getTool().getSourceCode()
+					.getCompiledCode());
+
+			ied.setOrganization1Oid(getOrganization().getOid());
+			ied.setMenuGroup("Exports");
+			ied.setSequenceNumber(0);
+			ied.setWeight(1);
+			ied.setType(ImportExportDefinition.TYPE_EXPORT);
+			ied.setComment("This was created by " + getUser().getNameView()
+					+ " using " + getJob().getTool().getId() + " on "
+					+ (new PlainDate()) + ".");
+			ied.setComment("");
+			ied.setId(newExportID);
+			ied.setName(newExportName);
+			ied.setJarPluginId(getJob().getTool().getJarPluginId());
+			ied.setJarPluginPath(getJob().getTool().getJarPluginPath());
+
+			ied.setSourceCodeOid(tsc.getOid());
+			errors.addAll(getBroker().saveBean(ied));
+
+			getBroker().commitTransaction();
+			logToolMessage(Level.INFO, "commit " + ied.getOid(), false);
+			committedTransaction = true;
+
+			publishNewExportHTMLResults(errors, tsc, ied);
+		} finally {
+			if (!committedTransaction) {
+				logToolMessage(Level.INFO, "rollback", false);
+				getBroker().rollbackTransaction();
 			}
 		}
+	}
+
+	private ImportExportDefinition getExport() {
+		X2Criteria criteria = new X2Criteria();
+		criteria.addEqualTo(ImportExportDefinition.COL_NAME, newExportName);
+		criteria.addEqualTo(ImportExportDefinition.COL_ID, newExportID);
+		BeanQuery q = new BeanQuery(ImportExportDefinition.class, criteria);
+		return (ImportExportDefinition) getBroker().getBeanByQuery(q);
+	}
+
+	private void publishNewExportHTMLResults(
+			final List<ValidationError> errors, final ToolSourceCode tsc,
+			final ImportExportDefinition ied) throws IOException {
+		try (OutputStream out = getResultHandler().getOutputStream()) {
+			try (HtmlPage page = new HtmlPage(out, "Results")) {
+				page.add(new HtmlComponent() {
+
+					@Override
+					public void installDependencies(HtmlPage page) {
+						// intentionally empty
+					}
+
+					@Override
+					public void writeHtml(HtmlPage page, String id,
+							IndentedPrintStream stream) {
+						if (errors.isEmpty()) {
+							stream.println("Successfully saved export "
+									+ ied.getName() + " (" + ied.getId()
+									+ "). " + ied.getOid() + " / "
+									+ tsc.getOid());
+						} else {
+							stream.println("Errors occurred saving the new export \""
+									+ ied.getName()
+									+ "\" (no changes were saved):\n"
+									+ HtmlEncoder.encode(errors.toString()));
+						}
+					}
+
+				});
+			}
+
+		}
+	}
+
+	protected void exportData() throws Exception {
+		FileType fileType = FileType.forFileExtension(fileExtension);
 
 		List<String> columnNames = new ArrayList<>();
 		for (int a = 0; a < fields.size(); a++) {
@@ -276,10 +449,56 @@ public class CurrentTableExport extends ToolJavaSource {
 						+ "\" and \"" + PARAM_QUERY
 						+ "\" should either both be defined or both be empty.");
 			}
+
+			fileExtension = (String) getParameters().get(PARAM_FILE_EXTENSION);
+			if (fileExtension == null)
+				fileExtension = "csv";
+
+			newExportName = (String) getParameters().get(PARAM_NEW_EXPORT_NAME);
+			newExportID = (String) getParameters().get(PARAM_NEW_EXPORT_ID);
+			if (StringUtils.isEmpty(newExportName)
+					&& StringUtils.isEmpty(newExportID)) {
+				isCreateNewExport = false;
+			} else if (!(StringUtils.isEmpty(newExportName))
+					&& !(StringUtils.isEmpty(newExportID))) {
+				isCreateNewExport = true;
+				// we're going to make a page describing the new tool
+				fileExtension = "html";
+			} else if (StringUtils.isEmpty(newExportName)) {
+				throw new RuntimeException(
+						"If the export ID is defined the export name must be defined too.");
+			} else if (StringUtils.isEmpty(newExportID)) {
+				throw new RuntimeException(
+						"If the export name is defined the export ID must be defined too.");
+			}
 		} catch (X2BaseException e) {
 			throw e;
 		} catch (Exception e) {
 			throw new X2BaseException(e);
+		}
+	}
+
+	protected void initialize() throws X2BaseException {
+		super.initialize();
+		initializeFileInfo();
+	}
+
+	@Override
+	public String getCustomFileName() {
+		initializeFileInfo();
+		if (customFileName != null) {
+			return customFileName;
+		}
+		return super.getCustomFileName();
+	}
+
+	private void initializeFileInfo() {
+		if (customFileName == null && fileExtension != null) {
+			FileType f = FileType.forFileExtension(fileExtension);
+			Random random = new Random();
+			customFileName = "export" + random.nextInt(1000) + "."
+					+ f.fileExtension;
+			getJob().getInput().setFormat(f.toolInputType);
 		}
 	}
 
@@ -292,9 +511,6 @@ public class CurrentTableExport extends ToolJavaSource {
 	 */
 	protected void initializeUsingCurrentState(UserDataContainer userData) {
 		ContextList currentList = userData.getCurrentList();
-		RowResultIteratorBuilder builder = new RowResultIteratorBuilder(
-				getBroker().getPersistenceKey(), currentList.getQuery()
-						.getBaseClass());
 
 		String fieldSetOid = userData.getCurrentList().getSelectedFieldSetOid();
 		FieldSet fieldSet = (FieldSet) getBroker().getBeanByOid(FieldSet.class,
@@ -310,13 +526,11 @@ public class CurrentTableExport extends ToolJavaSource {
 			BeanColumnPath bcp = (BeanColumnPath) getBeanPath(currentList
 					.getQuery().getBaseClass(), oid);
 			fields.add(bcp);
-			builder.addColumn(bcp);
 		}
 
-		// currentList.getQuery() returns a BeanQuery,
-		// but we want to use a ColumnQuery instead.
-		Criteria criteria = currentList.getQuery().getCriteria();
-		columnQuery = builder.createColumnQuery(criteria);
+		Query q = currentList.getQuery();
+		columnQuery = createColumnQuery(getBroker().getPersistenceKey(),
+				fields, q.getBaseClass(), q.getCriteria(), q.getOrderBy());
 	}
 
 	/**
@@ -331,12 +545,16 @@ public class CurrentTableExport extends ToolJavaSource {
 	 */
 	protected void initialize(String queryParam, String fieldsParam)
 			throws Exception {
-		columnQuery = (ColumnQuery) deserializeBase64(queryParam);
+		ColumnQuery q = (ColumnQuery) deserializeBase64(queryParam);
 
 		String[] terms = fieldsParam.split(",");
 		for (String term : terms) {
-			fields.add((BeanColumnPath) getBeanPath(columnQuery.getBaseClass(),
-					term));
+			fields.add((BeanColumnPath) getBeanPath(q.getBaseClass(), term));
 		}
+
+		// re-initialize the ColumnQuery now that we know the exact fields the
+		// user wants in this pass:
+		columnQuery = createColumnQuery(getBroker().getPersistenceKey(),
+				fields, q.getBaseClass(), q.getCriteria(), q.getOrderBy());
 	}
 }
