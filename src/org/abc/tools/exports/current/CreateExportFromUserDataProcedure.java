@@ -8,8 +8,6 @@ import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.zip.GZIPInputStream;
@@ -18,14 +16,9 @@ import java.util.zip.GZIPOutputStream;
 import org.abc.tools.Tool;
 import org.abc.tools.exports.AbstractCustomFileExtensionTool;
 import org.abc.util.BeanPathUtils;
-import org.apache.ojb.broker.metadata.FieldHelper;
-import org.apache.ojb.broker.query.Criteria;
 import org.apache.ojb.broker.query.Query;
 
-import com.follett.cust.cub.ExportHelperCub.FileType;
 import com.follett.cust.io.Base64;
-import com.follett.cust.io.exporter.RowExporter;
-import com.follett.cust.io.exporter.RowExporter.CellGroup;
 import com.follett.cust.io.html.Checklist;
 import com.follett.cust.io.html.Checklist.NoteType;
 import com.follett.cust.io.html.Checklist.SummaryItem;
@@ -34,12 +27,9 @@ import com.follett.cust.io.html.HtmlImage;
 import com.follett.cust.io.html.HtmlPage;
 import com.follett.fsc.core.framework.persistence.BeanQuery;
 import com.follett.fsc.core.framework.persistence.ColumnQuery;
-import com.follett.fsc.core.framework.persistence.RowResultIteratorBuilder;
 import com.follett.fsc.core.framework.persistence.X2Criteria;
-import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.FieldSet;
 import com.follett.fsc.core.k12.beans.ImportExportDefinition;
-import com.follett.fsc.core.k12.beans.ReportQueryIterator;
 import com.follett.fsc.core.k12.beans.ToolSourceCode;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.beans.path.BeanColumnPath;
@@ -48,7 +38,6 @@ import com.follett.fsc.core.k12.web.ContextList;
 import com.follett.fsc.core.k12.web.UserDataContainer;
 import com.follett.fsc.core.k12.web.WebUtils;
 import com.x2dev.utils.StringUtils;
-import com.x2dev.utils.ThreadUtils;
 import com.x2dev.utils.X2BaseException;
 import com.x2dev.utils.types.PlainDate;
 
@@ -119,39 +108,6 @@ public class CreateExportFromUserDataProcedure extends
 	}
 
 	/**
-	 * Create a ColumnQuery.
-	 * 
-	 * @param persistenceKey
-	 * @param fields
-	 *            the fields this query will retrieve
-	 * @param baseClass
-	 * @param criteria
-	 * @param sortBy
-	 *            a list of FieldHelpers indicating how to sort this query.
-	 * @return
-	 */
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	private static ColumnQuery createColumnQuery(PersistenceKey persistenceKey,
-			List<BeanColumnPath> fields, Class baseClass, Criteria criteria,
-			List<FieldHelper> sortBy) {
-		if (fields.isEmpty())
-			throw new RuntimeException(
-					"Fields must be defined to construct the ColumnQuery");
-
-		RowResultIteratorBuilder builder = new RowResultIteratorBuilder(
-				persistenceKey, baseClass);
-		builder.addColumns(fields);
-
-		for (FieldHelper sortByHelper : sortBy) {
-			BeanColumnPath bcp = (BeanColumnPath) BeanPathUtils.getBeanPath(
-					baseClass, sortByHelper.name);
-			builder.addOrderBy(bcp, sortByHelper.isAscending);
-		}
-
-		return builder.createColumnQuery(criteria);
-	}
-
-	/**
 	 * This should resolve to a comma-separated list of fields to export, or an
 	 * empty String if we should use the current FieldSet.
 	 */
@@ -203,77 +159,15 @@ public class CreateExportFromUserDataProcedure extends
 			if (isCreateNewExport) {
 				createNewExport();
 			} else {
-				exportData();
+				try (OutputStream out = getResultHandler().getOutputStream()) {
+					DataWriter writer = new DataWriter();
+					writer.write(getBroker(), columnQuery, fields, out,
+							getFileExtension(), getCharacterEncoding());
+				}
 			}
 		} catch (Exception e) {
 			addCustomErrorMessage(e.getMessage());
 			throw e;
-		}
-	}
-
-	/**
-	 * Export a query as a file.
-	 * <p>
-	 * This pipes the data directly into the file one row at a time.
-	 * 
-	 * @throws Exception
-	 */
-	@SuppressWarnings("rawtypes")
-	protected void exportData() throws Exception {
-		FileType fileType = FileType.forFileExtension(getFileExtension());
-
-		List<String> columnNames = new ArrayList<>();
-		for (int a = 0; a < fields.size(); a++) {
-			String name = fields.get(a)
-					.getField(getBroker().getPersistenceKey())
-					.getUserShortName();
-			columnNames.add(name);
-		}
-
-		// pipe data directly the OutputStream to save memory:
-		try (OutputStream out = getResultHandler().getOutputStream()) {
-			String header = null;
-			try (RowExporter exporter = fileType.createRowExporter(out,
-					getCharacterEncoding(), header)) {
-				try (ReportQueryIterator iter = getBroker()
-						.getReportQueryIteratorByQuery(columnQuery)) {
-					CellGroup group = new CellGroup(null, null, null,
-							columnNames.toArray(new String[columnNames.size()]));
-					Collection<String> fieldStrings = new HashSet<>(
-							fields.size());
-					for (BeanColumnPath bcp : fields)
-						fieldStrings.add(bcp.toString());
-					String[] columns = columnQuery.getColumns();
-
-					while (iter.hasNext()) {
-						ThreadUtils.checkInterrupt();
-						Object[] row = (Object[]) iter.next();
-
-						// the row array may contain a few extra oids used for
-						// joins we want to narrow this down to ONLY the values
-						// we're outputting:
-						List<Object> reducedRow = new ArrayList<>(row.length);
-						for (int a = 0; a < columns.length; a++) {
-							if (fieldStrings.contains(columns[a]))
-								reducedRow.add(row[a]);
-						}
-
-						if (reducedRow.size() != columnNames.size())
-							throw new IllegalStateException(
-									"the number of incoming cell values didn't match the number of columns ("
-											+ reducedRow.size() + "!="
-											+ columnNames.size() + ")");
-
-						List<String> cellValues = new ArrayList<>(
-								reducedRow.size());
-						for (int a = 0; a < reducedRow.size(); a++) {
-							String str = toString(reducedRow.get(a));
-							cellValues.add(str);
-						}
-						exporter.writeStrings(group, cellValues);
-					}
-				}
-			}
 		}
 	}
 
@@ -437,19 +331,6 @@ public class CreateExportFromUserDataProcedure extends
 		}
 	}
 
-	/**
-	 * Convert an Object from a query into a String for the exported file.
-	 * 
-	 * @param value
-	 *            a value, including null, PlainDates, Integers, etc.
-	 * @return the String to put in the exported file.
-	 */
-	protected String toString(Object value) {
-		if (value == null)
-			return "";
-		return value.toString();
-	}
-
 	@Override
 	protected void saveState(UserDataContainer userData) throws X2BaseException {
 		super.saveState(userData);
@@ -499,8 +380,9 @@ public class CreateExportFromUserDataProcedure extends
 		fields = (List) BeanPathUtils.getBeanPaths(fieldSet);
 
 		Query q = currentList.getQuery();
-		columnQuery = createColumnQuery(getBroker().getPersistenceKey(),
-				fields, q.getBaseClass(), q.getCriteria(), q.getOrderBy());
+		columnQuery = DataWriter.createColumnQuery(getBroker()
+				.getPersistenceKey(), fields, q.getBaseClass(),
+				q.getCriteria(), q.getOrderBy());
 	}
 
 	/**
@@ -526,7 +408,8 @@ public class CreateExportFromUserDataProcedure extends
 
 		// re-initialize the ColumnQuery now that we know the exact fields the
 		// user wants in this pass:
-		columnQuery = createColumnQuery(getBroker().getPersistenceKey(),
-				fields, q.getBaseClass(), q.getCriteria(), q.getOrderBy());
+		columnQuery = DataWriter.createColumnQuery(getBroker()
+				.getPersistenceKey(), fields, q.getBaseClass(),
+				q.getCriteria(), q.getOrderBy());
 	}
 }

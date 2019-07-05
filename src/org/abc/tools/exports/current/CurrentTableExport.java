@@ -8,19 +8,12 @@ import org.abc.tools.Tool;
 import org.abc.tools.exports.AbstractCustomFileExtensionTool;
 import org.abc.util.BeanPathUtils;
 
-import com.follett.cust.cub.ExportHelperCub.FileType;
-import com.follett.cust.io.exporter.RowExporter;
-import com.follett.cust.io.exporter.RowExporter.CellGroup;
 import com.follett.fsc.core.framework.persistence.BeanQuery;
+import com.follett.fsc.core.framework.persistence.ColumnQuery;
 import com.follett.fsc.core.k12.beans.FieldSet;
-import com.follett.fsc.core.k12.beans.QueryIterator;
-import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.beans.path.BeanColumnPath;
-import com.follett.fsc.core.k12.business.dictionary.DataDictionaryField;
 import com.follett.fsc.core.k12.web.ContextList;
 import com.follett.fsc.core.k12.web.UserDataContainer;
-import com.x2dev.utils.KeyValuePair;
-import com.x2dev.utils.ThreadUtils;
 import com.x2dev.utils.X2BaseException;
 
 /**
@@ -41,76 +34,31 @@ public class CurrentTableExport extends AbstractCustomFileExtensionTool {
 	protected static String PARAM_FILE_EXTENSION = "fileExtension";
 
 	/**
-	 * The BeanQuery this export issues.
+	 * A list of the fields to include in this export.
 	 */
-	BeanQuery beanQuery;
+	@SuppressWarnings("rawtypes")
+	List<BeanColumnPath> fields = new ArrayList<>();
 
 	/**
-	 * A list of column java names and header names. So for a student the first
-	 * value might be "nameView" (which is how we retrieve it from the bean),
-	 * and the second value would be "Name" (which is how the column in the
-	 * export is labeled).
+	 * The ColumnQuery this export issues.
+	 * <p>
+	 * This must include all the fields in {@link #fields}, but it may also
+	 * include additional fields (used for joins).
 	 */
-	List<KeyValuePair<String, String>> columns = new ArrayList<>();
+	ColumnQuery columnQuery;
 
 	@Override
 	protected void run() throws Exception {
 		try {
-			FileType fileType = FileType.forFileExtension(getFileExtension());
-
-			List<String> columnNames = new ArrayList<>();
-			for (int a = 0; a < columns.size(); a++) {
-				columnNames.add(columns.get(a).getValue());
-			}
-
-			// pipe data directly the OutputStream to save memory:
 			try (OutputStream out = getResultHandler().getOutputStream()) {
-				String header = null;
-				try (RowExporter exporter = fileType.createRowExporter(out,
-						getCharacterEncoding(), header)) {
-					try (QueryIterator iter = getBroker().getIteratorByQuery(
-							beanQuery)) {
-						CellGroup group = new CellGroup(null, null, null,
-								columnNames.toArray(new String[columnNames
-										.size()]));
-
-						while (iter.hasNext()) {
-							ThreadUtils.checkInterrupt();
-							X2BaseBean bean = (X2BaseBean) iter.next();
-							List<Object> row = new ArrayList<>();
-							for (int a = 0; a < columns.size(); a++) {
-								row.add(bean.getFieldValueByBeanPath(columns
-										.get(a).getKey()));
-							}
-
-							List<String> cellValues = new ArrayList<>(
-									row.size());
-							for (int a = 0; a < row.size(); a++) {
-								String str = toString(row.get(a));
-								cellValues.add(str);
-							}
-							exporter.writeStrings(group, cellValues);
-						}
-					}
-				}
+				DataWriter writer = new DataWriter();
+				writer.write(getBroker(), columnQuery, fields, out,
+						getFileExtension(), getCharacterEncoding());
 			}
 		} catch (Exception e) {
 			addCustomErrorMessage(e.getMessage());
 			throw e;
 		}
-	}
-
-	/**
-	 * Convert an Object from a query into a String for the exported file.
-	 * 
-	 * @param value
-	 *            a value, including null, PlainDates, Integers, etc.
-	 * @return the String to put in the exported file.
-	 */
-	protected String toString(Object value) {
-		if (value == null)
-			return "";
-		return value.toString();
 	}
 
 	@SuppressWarnings({ "unchecked", "rawtypes" })
@@ -121,22 +69,15 @@ public class CurrentTableExport extends AbstractCustomFileExtensionTool {
 
 			ContextList currentList = userData.getCurrentList();
 
-			String fieldSetOid = userData.getCurrentList()
-					.getSelectedFieldSetOid();
+			String fieldSetOid = currentList.getSelectedFieldSetOid();
 			FieldSet fieldSet = (FieldSet) getBroker().getBeanByOid(
 					FieldSet.class, fieldSetOid);
-			List<BeanColumnPath> bcps = (List) BeanPathUtils
-					.getBeanPaths(fieldSet);
+			fields = (List) BeanPathUtils.getBeanPaths(fieldSet);
 
-			for (BeanColumnPath bcp : bcps) {
-				DataDictionaryField ddf = bcp.getField(getBroker()
-						.getPersistenceKey());
-				KeyValuePair<String, String> column = new KeyValuePair<>(
-						bcp.toString(), ddf.getUserShortName());
-				columns.add(column);
-			}
-
-			beanQuery = currentList.getQuery();
+			BeanQuery q = currentList.getQuery();
+			columnQuery = DataWriter.createColumnQuery(getBroker()
+					.getPersistenceKey(), fields, q.getBaseClass(), q
+					.getCriteria(), q.getOrderBy());
 
 			String ext = (String) getParameters().get(PARAM_FILE_EXTENSION);
 			if (ext == null)
