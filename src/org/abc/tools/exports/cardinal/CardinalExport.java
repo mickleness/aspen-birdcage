@@ -534,7 +534,7 @@ public class CardinalExport extends ToolJavaSource {
             "    <tr><td class=\"inspector-label\">Display:</td>\n" +
             "      <td style=\"padding: 5px;\">\n" +
             "     <select style=\"font-family: 'Open Sans', Arial, sans-serif;font-size: 18px;\" id=\"data-sort\" onchange=\"refreshFromModelProperty();\">\n" +
-            "      <option value=\"udf-name\">UDF Name or Java Name</option>\n" +
+            "      <option value=\"udf-name\">UDF/Java Name</option>\n" +
             "      <option value=\"model-property\">Model Property</option>\n" +
             "      <option value=\"java-name\">Java Name</option>\n" +
             "     </select></td>\n" +
