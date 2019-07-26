@@ -681,16 +681,8 @@ public class CardinalExport extends ToolJavaSource {
 			sb.append("'"+getSimpleName(field.getJavaType())+"',");
 			sb.append("'"+field.getJdbcType()+"', ");
 			sb.append("'"+field.getDatabaseLength()+"',");
-			if(fdd != null)
-			{
-				sb.append("'"+shortName+"',");
-				sb.append("'"+longName+"',");
-			}
-			else
-			{
-				sb.append("\",\"");
-				sb.append("\",\"");
-			}
+			sb.append("'"+shortName+"',");
+			sb.append("'"+longName+"',");
 
 			StringBuilder flags = new StringBuilder();
 			if(field.isEnabled()) {
