@@ -206,6 +206,8 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.x2dev.sis.model.business.MultiStudentAttendanceSummary.class);
 		sourceCodeManager
 				.addClasses(org.apache.ojb.broker.metadata.FieldHelper.class);
+		sourceCodeManager
+				.addClasses(com.follett.fsc.core.k12.tools.ToolObjectFactory.class);
 
 		// utils
 		sourceCodeManager.addClasses(com.x2dev.utils.Base64.class);
@@ -239,6 +241,8 @@ public class XrayExport extends ToolJavaSource {
 		sourceCodeManager.addClasses(com.x2dev.utils.NumberUtils.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.web.WebUtils.class);
+		sourceCodeManager
+				.addClasses(org.apache.commons.lang.time.DateUtils.class);
 
 		// constants
 		sourceCodeManager
@@ -279,6 +283,12 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.follett.fsc.core.framework.persistence.adjusters.DistinctAdjuster.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.framework.persistence.RowResultIteratorBuilder.class);
+		sourceCodeManager
+				.addClasses(com.x2dev.utils.KeyValueTrio.class);
+		sourceCodeManager
+				.addClasses(org.apache.ojb.broker.query.QueryByIdentity.class);
+		sourceCodeManager
+				.addClasses(com.follett.fsc.core.k12.web.template.Cell.class);
 
 		String[] columns = { SisDataTable.COL_CLASS_NAME };
 		ColumnQuery query = new ColumnQuery(SisDataTable.class, columns,
