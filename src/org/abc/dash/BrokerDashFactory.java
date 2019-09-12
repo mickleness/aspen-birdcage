@@ -657,21 +657,23 @@ public class BrokerDashFactory {
 			
 			if(!splitOperatorsToCache.isEmpty()) {
 				Map<Operator, List<String>> oidsByOperator = new HashMap<>();
-				for(X2BaseBean bean : knownBeans) {
-					for(Operator op : splitOperatorsToCache) {
+				scanOps : for(Operator op : splitOperatorsToCache) {
+					List<String> oids = oidsByOperator.get(op);
+					if(oids==null) {
+						oids = new LinkedList<>();
+						oidsByOperator.put(op, oids);
+					}
+					for(X2BaseBean bean : knownBeans) {
 						try {
 							if(op.evaluate(BrokerDash.CONTEXT, bean)) {
-								List<String> oids = oidsByOperator.get(op);
-								if(oids==null) {
-									oids = new LinkedList<>();
-									oidsByOperator.put(op, oids);
-								}
 								oids.add(bean.getOid());
 							}
 						} catch(Exception e) {
 							AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluated \""+op+"\" on \""+bean+"\"", e);
 							// store a large value in here so we'll never try caching this particular Operator again
 							cache.put(new Key(op, orderBy), new AtomicInteger(100));
+							oidsByOperator.remove(op);
+							continue scanOps;
 						}
 					}
 				}
