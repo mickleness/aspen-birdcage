@@ -6,7 +6,6 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -21,6 +20,7 @@ import java.util.logging.Level;
 import org.abc.util.OrderByComparator;
 import org.apache.ojb.broker.Identity;
 import org.apache.ojb.broker.PersistenceBroker;
+import org.apache.ojb.broker.metadata.FieldHelper;
 import org.apache.ojb.broker.query.Criteria;
 import org.apache.ojb.broker.query.Query;
 
@@ -213,144 +213,6 @@ public class BrokerDashFactory {
 		}
 	}
 
-	/**
-	 * This iterates over a series of X2BaseBeans based on an ordered list of
-	 * bean oids.
-	 * <p>
-	 * This pulls beans out of the X2ObjectCache when possible. If some beans
-	 * are not in that cache: then this will execute one query to identify the
-	 * remaining beans based on their oids.
-	 */
-	@SuppressWarnings("rawtypes")
-	static class BeanIteratorFromOidList extends QueryIterator {
-		X2Broker broker;
-		List<String> beanOids;
-		Class beanType;
-
-		Iterator<String> beanOidsIter;
-
-		/**
-		 * This is an ordered set of the remaining beans. This field will only
-		 * be defined if the X2ObjectCache failed at some point to provide a
-		 * required bean. Once this field is defined: we use this data insetad
-		 * of beanOidsIter
-		 */
-		TreeSet<X2BaseBean> beans;
-
-		public BeanIteratorFromOidList(X2Broker broker, Class beanType,
-				List<String> beanOids) {
-			Objects.requireNonNull(broker);
-			Objects.requireNonNull(beanOids);
-			Objects.requireNonNull(beanType);
-			this.broker = broker;
-			this.beanOids = beanOids;
-			this.beanType = beanType;
-			beanOidsIter = beanOids.iterator();
-		}
-
-		@Override
-		protected void finalize() {
-			close();
-		}
-
-		@Override
-		public boolean hasNext() {
-			if (beans != null)
-				return !beans.isEmpty();
-
-			return beanOidsIter.hasNext();
-		}
-
-		@Override
-		public Object next() {
-			if (beans != null) {
-				// in this case: we already had to do the hard work (see below),
-				// and now we know exactly what to return.
-				return beans.pollFirst();
-			}
-
-			String beanOid = beanOidsIter.next();
-			X2BaseBean bean = BrokerDashFactory.getBeanFromGlobalCache(
-					broker.getPersistenceKey(), beanType, beanOid);
-			if (bean != null) {
-				// this is our ideal case: we asked for a bean oid and the cache
-				// provided the bean.
-				return bean;
-			}
-
-			// This is unfortunate: the global cache doesn't have what we need.
-			// So now we're going to actually fetch all the remaining beans we
-			// need and from now on we'll iterate over that.
-
-			List<String> beanOidsToQuery = new LinkedList<>();
-			final Map<String, Integer> beanOidToOrder = new HashMap<>();
-			Comparator<X2BaseBean> comparator = new Comparator<X2BaseBean>() {
-
-				@Override
-				public int compare(X2BaseBean o1, X2BaseBean o2) {
-					int k1 = beanOidToOrder.get(o1.getOid());
-					int k2 = beanOidToOrder.get(o2.getOid());
-					return Integer.compare(k1, k2);
-				}
-
-			};
-
-			beans = new TreeSet<>(comparator);
-
-			int ctr = 0;
-			beanOidToOrder.put(beanOid, ctr++);
-			beanOidsToQuery.add(beanOid);
-
-			while (beanOidsIter.hasNext()) {
-				beanOid = beanOidsIter.next();
-				beanOidToOrder.put(beanOid, ctr++);
-
-				bean = BrokerDashFactory.getBeanFromGlobalCache(
-						broker.getPersistenceKey(), beanType, beanOid);
-				if (bean != null) {
-					// go ahead and keep strong references to all the remaining
-					// beans. If the X2ObjectCache is purged we don't want to
-					// issue any more queries to resolve missing beans.
-					beans.add(bean);
-				} else {
-					beanOidsToQuery.add(beanOid);
-				}
-			}
-
-			Criteria criteria = new Criteria();
-			criteria.addIn(X2BaseBean.COL_OID, beanOidsToQuery);
-			BeanQuery beanQuery = new BeanQuery(beanType, criteria);
-			try (QueryIterator iter = broker.getIteratorByQuery(beanQuery)) {
-				while (iter.hasNext()) {
-					bean = (X2BaseBean) iter.next();
-					beans.add(bean);
-				}
-			}
-
-			return beans.pollFirst();
-		}
-
-		@Override
-		public PersistenceKey getPersistenceKey() {
-			return broker.getPersistenceKey();
-		}
-
-		@Override
-		public void close() {
-			// do nothing
-		}
-
-		@Override
-		protected Iterator getIterator(PersistenceBroker arg0, Query arg1) {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}
-	}
-
 	static class DashInvocationHandler implements InvocationHandler {
 		static Method method_getIteratorByQuery;
 		static Method method_getBeanByQuery;
@@ -424,11 +286,6 @@ public class BrokerDashFactory {
 		X2Broker broker;
 		boolean active = initialized;
 		CachePool cachePool;
-		
-		/**
-		 * Here the Object is either an AtomicInteger representing the number of
-		 * attempted lookups OR a list of oids.
-		 */
 		Map<Class, Cache<Key, Object>> cacheByBeanType;
 
 		DashInvocationHandler(X2Broker broker,
@@ -650,9 +507,22 @@ public class BrokerDashFactory {
 			}
 			
 			if (beanOids != null) {
-				//this is our ideal case: we know the complete query results
-				return new BeanIteratorFromOidList(broker,
-						beanQuery.getBaseClass(), beanOids);
+				List<X2BaseBean> beans = getBeansFromGlobalCache(broker.getPersistenceKey(), beanQuery.getBaseClass(), beanOids);
+				if(beans!=null) {
+					//this is our ideal case: we know the complete query results
+					return new BeanIteratorFromList(broker.getPersistenceKey(), beans);
+				}
+				
+				// we know the exact oids, but those beans aren't in Aspen's cache anymore.
+				
+				// we can at least rewrite the query:
+				Criteria oidCriteria = new Criteria();
+				oidCriteria.addIn(X2BaseBean.COL_OID, beanOids);
+				beanQuery = new BeanQuery(beanQuery.getBaseClass(), oidCriteria);
+				for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
+					beanQuery.addOrderBy(fieldHelper);
+				}
+				return broker.getIteratorByQuery(beanQuery);
 			}
 
 			List<Operator> operatorsToCache = new LinkedList<>();
@@ -665,9 +535,9 @@ public class BrokerDashFactory {
 			Collection<Operator> splitOperators = canonicalOperator.split();
 			splitOperators.remove(canonicalOperator);
 			Iterator<Operator> splitIter = splitOperators.iterator();
-			Collection<X2BaseBean> knownBeans = new TreeSet<>(orderBy);
 			
 			boolean removedOperators = false;
+			Collection<X2BaseBean> knownBeans = new TreeSet<>(orderBy);
 			while(splitIter.hasNext()) {
 				Operator splitOperator = splitIter.next();
 				Key splitKey = new Key(splitOperator, orderBy);
@@ -763,6 +633,7 @@ public class BrokerDashFactory {
 						}
 					} catch(Exception e) {
 						AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluated \""+op+"\" on \""+bean+"\"", e);
+						// store a large value in here so we'll never try caching this particular Operator again
 						cache.put(new Key(op, orderBy), new AtomicInteger(100));
 					}
 				}
