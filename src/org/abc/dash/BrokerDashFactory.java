@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -14,6 +15,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
 import org.abc.util.OrderByComparator;
@@ -422,10 +424,15 @@ public class BrokerDashFactory {
 		X2Broker broker;
 		boolean active = initialized;
 		CachePool cachePool;
-		Map<Class, Cache<Key, List<String>>> cacheByBeanType;
+		
+		/**
+		 * Here the Object is either an AtomicInteger representing the number of
+		 * attempted lookups OR a list of oids.
+		 */
+		Map<Class, Cache<Key, Object>> cacheByBeanType;
 
 		DashInvocationHandler(X2Broker broker,
-				Map<Class, Cache<Key, List<String>>> cacheByBeanType,
+				Map<Class, Cache<Key, Object>> cacheByBeanType,
 				CachePool cachePool) {
 			Objects.requireNonNull(broker);
 			Objects.requireNonNull(cacheByBeanType);
@@ -540,12 +547,12 @@ public class BrokerDashFactory {
 					.startsWith("saveBean")) && args[0] instanceof X2BaseBean) {
 				X2BaseBean bean = (X2BaseBean) args[0];
 				Class t = bean.getClass();
-				Cache<Key, List<String>> cache = cacheByBeanType.get(t);
+				Cache<Key, Object> cache = cacheByBeanType.get(t);
 				if (cache != null)
 					cache.clear();
 			} else if (method_deleteBeanByOid.equals(method)) {
 				Class beanType = (Class) args[0];
-				Cache<Key, List<String>> cache = cacheByBeanType
+				Cache<Key, Object> cache = cacheByBeanType
 						.get(beanType);
 				if (cache != null)
 					cache.clear();
@@ -553,7 +560,7 @@ public class BrokerDashFactory {
 					|| method_executeUpdateQuery.equals(method)
 					|| method_executeInsertQuery.equals(method)) {
 				Query query = (Query) args[0];
-				Cache<Key, List<String>> cache = cacheByBeanType.get(query
+				Cache<Key, Object> cache = cacheByBeanType.get(query
 						.getBaseClass());
 				if (cache != null)
 					cache.clear();
@@ -610,21 +617,46 @@ public class BrokerDashFactory {
 					.createOperator(beanQuery.getCriteria());
 			OrderByComparator orderBy = new OrderByComparator(false,
 					beanQuery.getOrderBy());
-			final Key cacheKey = new Key(operator, orderBy);
-			Cache<Key, List<String>> cache = cacheByBeanType.get(beanQuery
-					.getBaseClass());
-			if (cache == null) {
-				cache = new Cache(cachePool);
-				cacheByBeanType.put(beanQuery.getBaseClass(), cache);
+			Key cacheKey = new Key(operator, orderBy);
+			
+			Cache<Key, Object> cache;
+			synchronized(cacheByBeanType) {
+				cache = cacheByBeanType.get(beanQuery
+						.getBaseClass());
+				if (cache == null) {
+					cache = new Cache(cachePool);
+					cacheByBeanType.put(beanQuery.getBaseClass(), cache);
+				}
 			}
 
-			List<String> beanOids = cache.get(cacheKey);
+			Object cacheValue = cache.get(cacheKey);
+			List<String> beanOids;
+			boolean cacheResults;
+			if(cacheValue instanceof List) {
+				beanOids = (List<String>) cacheValue;
+				cacheResults = false;
+			} else if(cacheValue instanceof AtomicInteger) {
+				AtomicInteger i = (AtomicInteger) cacheValue;
+				if(i.intValue()<0) {
+					cacheResults = false;
+				} else {
+					cacheResults = i.incrementAndGet() > 5;
+				}
+				beanOids = null;
+			} else {
+				cache.put(cacheKey, new AtomicInteger(0));
+				beanOids = null;
+				cacheResults = false;
+			}
+			
 			if (beanOids != null) {
 				//this is our ideal case: we know the complete query results
 				return new BeanIteratorFromOidList(broker,
 						beanQuery.getBaseClass(), beanOids);
 			}
-			
+
+			List<Operator> operatorsToCache = new LinkedList<>();
+
 			Operator canonicalOperator = operator.getCanonicalOperator();
 			
 			//if a criteria said: "A==1 or A==2", then this splits them into two
@@ -632,29 +664,48 @@ public class BrokerDashFactory {
 			
 			Collection<Operator> splitOperators = canonicalOperator.split();
 			splitOperators.remove(canonicalOperator);
-			
 			Iterator<Operator> splitIter = splitOperators.iterator();
 			Collection<X2BaseBean> knownBeans = new TreeSet<>(orderBy);
+			
 			boolean removedOperators = false;
 			while(splitIter.hasNext()) {
 				Operator splitOperator = splitIter.next();
 				Key splitKey = new Key(splitOperator, orderBy);
-				List<String> splitOids = cache.get(splitKey);
-				List<X2BaseBean> splitBeans = getBeansFromGlobalCache(broker.getPersistenceKey(), 
-						beanQuery.getBaseClass(), 
-						splitOids);
-				if(splitBeans!=null) {
-					removedOperators = true;
-					knownBeans.addAll(splitBeans);
-					splitIter.remove();
+				
+				Object splitCacheValue = cache.get(splitKey);
+				List<String> splitOids;
+				if(splitCacheValue instanceof List) {
+					splitOids = (List<String>) splitCacheValue;
+
+					List<X2BaseBean> splitBeans = getBeansFromGlobalCache(broker.getPersistenceKey(), 
+							beanQuery.getBaseClass(), 
+							splitOids);
+					if(splitBeans!=null) {
+						removedOperators = true;
+						knownBeans.addAll(splitBeans);
+						splitIter.remove();
+					} else {
+						// we know the exact oids, but those beans aren't in Aspen's cache anymore.
+						// this is a shame, but there's nothing this caching layer can do to help.
+					}
+				} else if(splitCacheValue instanceof AtomicInteger) {
+					AtomicInteger i = (AtomicInteger) splitCacheValue;
+					int attempts = i.get();
+					if(attempts<5) {
+						i.incrementAndGet();
+					} else if(attempts<10) {
+						operatorsToCache.add(splitOperator);
+					}
+				} else {
+					cache.put(splitKey, new AtomicInteger(0));
 				}
 			}
 			
 			if(removedOperators) {
 				if(splitOperators.isEmpty()) {
-					// This is near-ideal: we broke the criteria down into small 
-					// pieces and looked up each piece. We only had to pay the cost
-					// of sorting. (That cost may include queries to look up order-by attributes, though)
+					// we broke the criteria down into small pieces and looked up every 
+					// piece. We only had to pay the cost of sorting (which might include
+					// its own queries)
 					return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans);
 				}
 				
@@ -667,7 +718,8 @@ public class BrokerDashFactory {
 				// we have a blank slate (no cached info came up)
 			
 				// so let's just dump incoming beans in a list. The order is going to be correct,
-				// because the order is coming straight from the source:
+				// because the order is coming straight from the source. So there's no need
+				// to use a TreeSet with a comparator anymore:
 				knownBeans = new LinkedList<>();
 			}
 
@@ -689,23 +741,29 @@ public class BrokerDashFactory {
 			
 			// now we have all our data, but before we return let's cache it for future lookups:
 			
-			List<String> knownBeanOids = new LinkedList<>();
-			for(X2BaseBean bean : knownBeans) {
-				knownBeanOids.add(bean.getOid());
+			if(cacheResults) {
+				List<String> knownBeanOids = new LinkedList<>();
+				for(X2BaseBean bean : knownBeans) {
+					knownBeanOids.add(bean.getOid());
+				}
+				cache.put(cacheKey, knownBeanOids);
 			}
-			
-			cache.put(cacheKey, knownBeanOids);
 			
 			Map<Operator, List<String>> oidsByOperator = new HashMap<>();
 			for(X2BaseBean bean : knownBeans) {
-				for(Operator op : splitOperators) {
-					if(op.evaluate(BrokerDash.CONTEXT, bean)) {
-						List<String> oids = oidsByOperator.get(op);
-						if(oids==null) {
-							oids = new LinkedList<>();
-							oidsByOperator.put(op, oids);
+				for(Operator op : operatorsToCache) {
+					try {
+						if(op.evaluate(BrokerDash.CONTEXT, bean)) {
+							List<String> oids = oidsByOperator.get(op);
+							if(oids==null) {
+								oids = new LinkedList<>();
+								oidsByOperator.put(op, oids);
+							}
+							oids.add(bean.getOid());
 						}
-						oids.add(bean.getOid());
+					} catch(Exception e) {
+						AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluated \""+op+"\" on \""+bean+"\"", e);
+						cache.put(new Key(op, orderBy), new AtomicInteger(100));
 					}
 				}
 			}
@@ -722,11 +780,11 @@ public class BrokerDashFactory {
 	protected CachePool cachePool;
 
 	@SuppressWarnings("rawtypes")
-	Map<Class, Cache<Key, List<String>>> cacheByBeanType;
+	Map<Class, Cache<Key, Object>> cacheByBeanType;
 
 	public BrokerDashFactory(int cacheSizeLimit, long cacheDurationLimit) {
 		cachePool = new CachePool(cacheSizeLimit, cacheDurationLimit, -1);
-		cacheByBeanType = new HashMap<>();
+		cacheByBeanType = Collections.synchronizedMap(new HashMap<Class, Cache<Key, Object>>());
 	}
 
 	/**
