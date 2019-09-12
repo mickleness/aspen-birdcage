@@ -525,71 +525,75 @@ public class BrokerDashFactory {
 				return broker.getIteratorByQuery(beanQuery);
 			}
 
-			List<Operator> operatorsToCache = new LinkedList<>();
-
 			Operator canonicalOperator = operator.getCanonicalOperator();
+			Collection<X2BaseBean> knownBeans = new TreeSet<>(orderBy);
 			
 			//if a criteria said: "A==1 or A==2", then this splits them into two
 			//unique criteria "A==1" and "A==2"
-			
 			Collection<Operator> splitOperators = canonicalOperator.split();
-			splitOperators.remove(canonicalOperator);
-			Iterator<Operator> splitIter = splitOperators.iterator();
-			
-			boolean removedOperators = false;
-			Collection<X2BaseBean> knownBeans = new TreeSet<>(orderBy);
-			while(splitIter.hasNext()) {
-				Operator splitOperator = splitIter.next();
-				Key splitKey = new Key(splitOperator, orderBy);
+			List<Operator> splitOperatorsToCache = new LinkedList<>();
+			if(splitOperators.size()>1) {
+				Iterator<Operator> splitIter = splitOperators.iterator();
 				
-				Object splitCacheValue = cache.get(splitKey);
-				List<String> splitOids;
-				if(splitCacheValue instanceof List) {
-					splitOids = (List<String>) splitCacheValue;
-
-					List<X2BaseBean> splitBeans = getBeansFromGlobalCache(broker.getPersistenceKey(), 
-							beanQuery.getBaseClass(), 
-							splitOids);
-					if(splitBeans!=null) {
-						removedOperators = true;
-						knownBeans.addAll(splitBeans);
-						splitIter.remove();
+				boolean removedOperators = false;
+				while(splitIter.hasNext()) {
+					Operator splitOperator = splitIter.next();
+					Key splitKey = new Key(splitOperator, orderBy);
+					
+					Object splitCacheValue = cache.get(splitKey);
+					List<String> splitOids = null;
+					if(splitCacheValue instanceof List) {
+						splitOids = (List<String>) splitCacheValue;
+	
+						List<X2BaseBean> splitBeans = getBeansFromGlobalCache(broker.getPersistenceKey(), 
+								beanQuery.getBaseClass(), 
+								splitOids);
+						if(splitBeans!=null) {
+							removedOperators = true;
+							knownBeans.addAll(splitBeans);
+							splitIter.remove();
+						} else {
+							// we know the exact oids, but those beans aren't in Aspen's cache anymore.
+							// this is a shame, but there's nothing this caching layer can do to help.
+						}
+					} else if(splitCacheValue instanceof AtomicInteger) {
+						AtomicInteger i = (AtomicInteger) splitCacheValue;
+						int attempts = i.get();
+						if(attempts<5) {
+							i.incrementAndGet();
+						} else if(attempts<10) {
+							splitOperatorsToCache.add(splitOperator);
+						}
 					} else {
-						// we know the exact oids, but those beans aren't in Aspen's cache anymore.
-						// this is a shame, but there's nothing this caching layer can do to help.
+						cache.put(splitKey, new AtomicInteger(0));
 					}
-				} else if(splitCacheValue instanceof AtomicInteger) {
-					AtomicInteger i = (AtomicInteger) splitCacheValue;
-					int attempts = i.get();
-					if(attempts<5) {
-						i.incrementAndGet();
-					} else if(attempts<10) {
-						operatorsToCache.add(splitOperator);
-					}
-				} else {
-					cache.put(splitKey, new AtomicInteger(0));
 				}
-			}
 			
-			if(removedOperators) {
 				if(splitOperators.isEmpty()) {
 					// we broke the criteria down into small pieces and looked up every 
 					// piece. We only had to pay the cost of sorting (which might include
 					// its own queries)
 					return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans);
+				} else if(removedOperators) {
+					// we resolved *some* operators, but not all of them.
+					Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
+					Criteria trimmedCriteria = CriteriaToOperatorConverter.createCriteria(trimmedOperator);
+					
+					// so we're going to make a new (narrower) query, and merge its results with knownBeans
+					beanQuery = new BeanQuery(beanQuery.getBaseClass(), trimmedCriteria);
+					for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
+						beanQuery.addOrderBy(fieldHelper);
+					}
 				}
-				
-				// we resolved *some* operators, but not all of them.
-				
-				Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
-				Criteria trimmedCriteria = CriteriaToOperatorConverter.createCriteria(trimmedOperator);
-				beanQuery = new BeanQuery(beanQuery.getBaseClass(), trimmedCriteria);
-			} else {
-				// we have a blank slate (no cached info came up)
+			}
 			
+			if(knownBeans.isEmpty()) {
+				// we have a blank slate (no cached info came up)
+				
 				// so let's just dump incoming beans in a list. The order is going to be correct,
 				// because the order is coming straight from the source. So there's no need
 				// to use a TreeSet with a comparator anymore:
+				
 				knownBeans = new LinkedList<>();
 			}
 
@@ -619,29 +623,31 @@ public class BrokerDashFactory {
 				cache.put(cacheKey, knownBeanOids);
 			}
 			
-			Map<Operator, List<String>> oidsByOperator = new HashMap<>();
-			for(X2BaseBean bean : knownBeans) {
-				for(Operator op : operatorsToCache) {
-					try {
-						if(op.evaluate(BrokerDash.CONTEXT, bean)) {
-							List<String> oids = oidsByOperator.get(op);
-							if(oids==null) {
-								oids = new LinkedList<>();
-								oidsByOperator.put(op, oids);
+			if(!splitOperatorsToCache.isEmpty()) {
+				Map<Operator, List<String>> oidsByOperator = new HashMap<>();
+				for(X2BaseBean bean : knownBeans) {
+					for(Operator op : splitOperatorsToCache) {
+						try {
+							if(op.evaluate(BrokerDash.CONTEXT, bean)) {
+								List<String> oids = oidsByOperator.get(op);
+								if(oids==null) {
+									oids = new LinkedList<>();
+									oidsByOperator.put(op, oids);
+								}
+								oids.add(bean.getOid());
 							}
-							oids.add(bean.getOid());
+						} catch(Exception e) {
+							AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluated \""+op+"\" on \""+bean+"\"", e);
+							// store a large value in here so we'll never try caching this particular Operator again
+							cache.put(new Key(op, orderBy), new AtomicInteger(100));
 						}
-					} catch(Exception e) {
-						AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluated \""+op+"\" on \""+bean+"\"", e);
-						// store a large value in here so we'll never try caching this particular Operator again
-						cache.put(new Key(op, orderBy), new AtomicInteger(100));
 					}
 				}
-			}
-			
-			for(Entry<Operator, List<String>> entry : oidsByOperator.entrySet()) {
-				Key splitKey = new Key(entry.getKey(), orderBy);
-				cache.put(splitKey, entry.getValue());
+				
+				for(Entry<Operator, List<String>> entry : oidsByOperator.entrySet()) {
+					Key splitKey = new Key(entry.getKey(), orderBy);
+					cache.put(splitKey, entry.getValue());
+				}
 			}
 
 			return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans);
