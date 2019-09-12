@@ -4,7 +4,6 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -12,6 +11,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.TreeSet;
 import java.util.logging.Level;
@@ -120,102 +120,52 @@ public class BrokerDashFactory {
 	}
 
 	/**
-	 * This filters a QueryIterator and records the oids of the beans it
-	 * returns.
-	 * <p>
-	 * When this iterator is closed: that list of oids will be stored in a Cache
-	 * using a predetermined key.
-	 * <p>
-	 * This list only stores a fixed number of oids. If the iterator exceeds
-	 * this limit: then this wrapper gives up and nothing is cached. For
-	 * example: if it iterates over, say, 500 beans that's probably OK. But if
-	 * this iterates over 5 million beans this just quietly gives up monitoring
-	 * after a fixed amount.
+	 * Return all the beans in a list of bean oids, or null if those beans were not readily available in the global cache.
 	 */
-	@SuppressWarnings("rawtypes")
-	protected static class BeanIteratorWrapper extends QueryIterator {
-
-		// Design-wise: this class is kind of hackish because it relies on
-		// QueryIterator's empty constructor. (But, in our defense:
-		// QueryIterator really ought to be an interface... which would make
-		// relying on a quirky constructor a non-issue...)
-
-		QueryIterator iter;
-		int maxListSize;
-		boolean active = true;
-		Cache<Key, List<String>> cache;
-		Key cacheKey;
-		List<String> oids = new LinkedList<>();
+	public static List<X2BaseBean> getBeansFromGlobalCache(PersistenceKey persistenceKey,Class beanType,List<String> beanOids) {
+		List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
+		for(String beanOid : beanOids) {
+			X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanType, beanOid);
+			if(bean==null)
+				return null;
+			beans.add(bean);
+		}
+		return beans;
+	}
+	
+	protected static class BeanIteratorFromList extends QueryIterator {
+		Iterator<X2BaseBean> beanIter;
+		QueryIterator queryIter;
+		PersistenceKey persistenceKey;
 
 		/**
-		 * @param cache
-		 *            the cache to store the list of oids in when close() is
-		 *            called
-		 * @param cacheKey
-		 *            the key to use to store the list of oids when close() is
-		 *            called
-		 * @param iter
-		 *            the underlying delegate iterator that's supplying all our
-		 *            info
-		 * @param maxListSize
-		 *            the maximum number of oids this wrapper will record before
-		 *            giving up
+		 * Create an iterator that will walk through a collection of beans.
 		 */
-		public BeanIteratorWrapper(Cache<Key, List<String>> cache,
-				Key cacheKey, QueryIterator iter, int maxListSize) {
-			Objects.requireNonNull(cache);
-			Objects.requireNonNull(cacheKey);
-			Objects.requireNonNull(iter);
-			this.iter = iter;
-			this.cache = cache;
-			this.cacheKey = cacheKey;
-			this.maxListSize = maxListSize;
+		public BeanIteratorFromList(PersistenceKey persistenceKey,Collection<X2BaseBean> beans) {
+			this(persistenceKey, beans, null);
+		}
+
+		/**
+		 * Create an iterator that will walk through a collection of beans and then a QueryIterator.
+		 */
+		public BeanIteratorFromList(PersistenceKey persistenceKey, Collection<X2BaseBean> beans, QueryIterator queryIterator) {
+			Objects.requireNonNull(persistenceKey);
+			beanIter = beans==null ? null : beans.iterator();
+			queryIter = queryIterator;
+			this.persistenceKey = persistenceKey;
 		}
 
 		@Override
-		public Object next() {
-			X2BaseBean bean = (X2BaseBean) iter.next();
-			if (active) {
-				oids.add(bean.getOid());
-				if (oids.size() > maxListSize) {
-					active = false;
-				}
-			}
-			return bean;
-		}
-
-		@Override
-		public boolean hasNext() {
-			return iter.hasNext();
-		}
-
-		@Override
-		public PersistenceKey getPersistenceKey() {
-			return iter.getPersistenceKey();
+		protected void finalize() {
+			close();
 		}
 
 		@Override
 		public void close() {
-			// if there are "a few" more elements: go ahead and record those
-			// too.
-
-			for (int a = 0; active && a < 100; a++) {
-				if (hasNext()) {
-					next();
-				} else {
-					break;
-				}
-			}
-			if (iter.hasNext()) {
-				// we should give up. We don't know how many more elements
-				// are waiting for us.
-				active = false;
-			}
-
-			if (active) {
-				cache.put(cacheKey, oids);
-			}
-			iter.close();
+			if(queryIter!=null)
+				queryIter.close();
+			queryIter = null;
+			beanIter = null;
 		}
 
 		@Override
@@ -224,8 +174,40 @@ public class BrokerDashFactory {
 		}
 
 		@Override
+		public Object next() {
+			Object returnValue = null;
+			if(beanIter!=null) {
+				if(beanIter.hasNext())
+					returnValue = beanIter.next();
+				if(!beanIter.hasNext())
+					beanIter = null;
+			}
+			if(returnValue==null && queryIter!=null) {
+				if(queryIter.hasNext())
+					returnValue = queryIter.next();
+				if(!queryIter.hasNext())
+					queryIter = null;
+			}
+			return returnValue;
+		}
+
+		@Override
+		public boolean hasNext() {
+			if(beanIter!=null && beanIter.hasNext())
+				return true;
+			if(queryIter!=null && queryIter.hasNext())
+				return true;
+			return false;
+		}
+
+		@Override
+		public PersistenceKey getPersistenceKey() {
+			return persistenceKey;
+		}
+
+		@Override
 		public void remove() {
-			iter.remove();
+			throw new UnsupportedOperationException();
 		}
 	}
 
@@ -623,7 +605,7 @@ public class BrokerDashFactory {
 		}
 
 		@SuppressWarnings({ "rawtypes", "unchecked" })
-		protected QueryIterator createdCachedIterator(final BeanQuery beanQuery) {
+		protected QueryIterator createdCachedIterator(BeanQuery beanQuery) {
 			Operator operator = CriteriaToOperatorConverter
 					.createOperator(beanQuery.getCriteria());
 			OrderByComparator orderBy = new OrderByComparator(false,
@@ -642,9 +624,98 @@ public class BrokerDashFactory {
 				return new BeanIteratorFromOidList(broker,
 						beanQuery.getBaseClass(), beanOids);
 			}
+			
+			Operator canonicalOperator = operator.getCanonicalOperator();
+			
+			//if a criteria said: "A==1 or A==2", then this splits them into two
+			//unique criteria "A==1" and "A==2"
+			
+			Collection<Operator> splitOperators = canonicalOperator.split();
+			splitOperators.remove(canonicalOperator);
+			
+			Iterator<Operator> splitIter = splitOperators.iterator();
+			Collection<X2BaseBean> knownBeans = new TreeSet<>(orderBy);
+			boolean removedOperators = false;
+			while(splitIter.hasNext()) {
+				Operator splitOperator = splitIter.next();
+				Key splitKey = new Key(splitOperator, orderBy);
+				List<String> splitOids = cache.get(splitKey);
+				List<X2BaseBean> splitBeans = getBeansFromGlobalCache(broker.getPersistenceKey(), 
+						beanQuery.getBaseClass(), 
+						splitOids);
+				if(splitBeans!=null) {
+					removedOperators = true;
+					knownBeans.addAll(splitBeans);
+					splitIter.remove();
+				}
+			}
+			
+			if(removedOperators) {
+				if(splitOperators.isEmpty()) {
+					// This is near-ideal: we broke the criteria down into small 
+					// pieces and looked up each piece. We only had to pay the cost
+					// of sorting. (That cost may include queries to look up order-by attributes, though)
+					return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans);
+				}
+				
+				// we resolved *some* operators, but not all of them.
+				
+				Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
+				Criteria trimmedCriteria = CriteriaToOperatorConverter.createCriteria(trimmedOperator);
+				beanQuery = new BeanQuery(beanQuery.getBaseClass(), trimmedCriteria);
+			} else {
+				// we have a blank slate (no cached info came up)
+			
+				// so let's just dump incoming beans in a list. The order is going to be correct,
+				// because the order is coming straight from the source:
+				knownBeans = new LinkedList<>();
+			}
 
+			// grab the first 1000 beans from our query:
 			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
-			return new BeanIteratorWrapper(cache, cacheKey, iter, 1000);
+			int ctr = 0;
+			while(iter.hasNext() && ctr<1000) {
+				X2BaseBean bean = (X2BaseBean) iter.next();
+				knownBeans.add(bean);
+				ctr++;
+			}
+			
+			if(iter.hasNext()) {
+				// too many beans; let's give up on caching:
+				return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans, iter);
+			}
+			
+			// we exhausted the iterator, so we have ALL the beans.
+			
+			// now we have all our data, but before we return let's cache it for future lookups:
+			
+			List<String> knownBeanOids = new LinkedList<>();
+			for(X2BaseBean bean : knownBeans) {
+				knownBeanOids.add(bean.getOid());
+			}
+			
+			cache.put(cacheKey, knownBeanOids);
+			
+			Map<Operator, List<String>> oidsByOperator = new HashMap<>();
+			for(X2BaseBean bean : knownBeans) {
+				for(Operator op : splitOperators) {
+					if(op.evaluate(BrokerDash.CONTEXT, bean)) {
+						List<String> oids = oidsByOperator.get(op);
+						if(oids==null) {
+							oids = new LinkedList<>();
+							oidsByOperator.put(op, oids);
+						}
+						oids.add(bean.getOid());
+					}
+				}
+			}
+			
+			for(Entry<Operator, List<String>> entry : oidsByOperator.entrySet()) {
+				Key splitKey = new Key(entry.getKey(), orderBy);
+				cache.put(splitKey, entry.getValue());
+			}
+
+			return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans);
 		}
 	}
 
