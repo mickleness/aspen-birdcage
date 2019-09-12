@@ -136,10 +136,10 @@ public class BrokerDashFactory {
 	}
 	
 	protected static class BeanIteratorFromList extends QueryIterator {
-		Iterator<X2BaseBean> beanIter;
-		QueryIterator queryIter;
+		Collection<X2BaseBean> beans;
+		QueryIterator queryIterator;
 		PersistenceKey persistenceKey;
-
+		
 		/**
 		 * Create an iterator that will walk through a collection of beans.
 		 */
@@ -148,12 +148,23 @@ public class BrokerDashFactory {
 		}
 
 		/**
-		 * Create an iterator that will walk through a collection of beans and then a QueryIterator.
+		 * Create an iterator that will walk through a collection of beans and a QueryIterator.
+		 * <p>
+		 * Every time a new bean is requested: if possible we pull a bean from the QueryIterator
+		 * and add it to the collection of beans. Then we pull the first bean from the collection of beans.
+		 * <p>
+		 * Sometimes the collection of incoming beans is a LinkedList, so this approach will give a FIFO order.
+		 * Sometimes the collection of incoming beans is a TreeSet, so this approach will use the TreeSet's
+		 * Comparator to merge the results.
+		 * 
+		 * @param persistenceKey the PersistenceKey associated with this iterator
+		 * @param beans the optional collection of beans to walk through
+		 * @param queryIterator the optional QueryIterator to walk through
 		 */
 		public BeanIteratorFromList(PersistenceKey persistenceKey, Collection<X2BaseBean> beans, QueryIterator queryIterator) {
 			Objects.requireNonNull(persistenceKey);
-			beanIter = beans==null ? null : beans.iterator();
-			queryIter = queryIterator;
+			this.beans = beans==null ? new LinkedList<X2BaseBean>() : beans;
+			this.queryIterator = queryIterator;
 			this.persistenceKey = persistenceKey;
 		}
 
@@ -164,10 +175,10 @@ public class BrokerDashFactory {
 
 		@Override
 		public void close() {
-			if(queryIter!=null)
-				queryIter.close();
-			queryIter = null;
-			beanIter = null;
+			if(queryIterator!=null)
+				queryIterator.close();
+			queryIterator = null;
+			beans.clear();
 		}
 
 		@Override
@@ -177,27 +188,22 @@ public class BrokerDashFactory {
 
 		@Override
 		public Object next() {
-			Object returnValue = null;
-			if(beanIter!=null) {
-				if(beanIter.hasNext())
-					returnValue = beanIter.next();
-				if(!beanIter.hasNext())
-					beanIter = null;
+			if(queryIterator!=null) {
+				if(queryIterator.hasNext()) {
+					X2BaseBean bean = (X2BaseBean) queryIterator.next();
+					beans.add(bean);
+				}
+				if(!queryIterator.hasNext())
+					queryIterator = null;
 			}
-			if(returnValue==null && queryIter!=null) {
-				if(queryIter.hasNext())
-					returnValue = queryIter.next();
-				if(!queryIter.hasNext())
-					queryIter = null;
-			}
-			return returnValue;
+			return beans.iterator().next();
 		}
 
 		@Override
 		public boolean hasNext() {
-			if(beanIter!=null && beanIter.hasNext())
+			if(!beans.isEmpty())
 				return true;
-			if(queryIter!=null && queryIter.hasNext())
+			if(queryIterator!=null && queryIterator.hasNext())
 				return true;
 			return false;
 		}
@@ -468,6 +474,22 @@ public class BrokerDashFactory {
 			}
 		}
 
+		/**
+		 * Create a QueryIterator for a BeanQuery.
+		 * <p>
+		 * In an ideal case: this will use cached data to completely avoid making a
+		 * database query.
+		 * <p>
+		 * This method should never issue more than one database query. There are 3
+		 * database queries this can issue:
+		 * <ul><li>The original incoming query as-is.</li>
+		 * <li>A query to retrieve beans based on oids. If this caching layer was able to identify
+		 * the exact oids we need, but those beans are no longer in Aspen's cache: a query based
+		 * on the oids should be pretty efficient.</li>
+		 * <li>A query to retrieve a subset of the original query. In this case we were able to
+		 * split the original query into smaller pieces, and some of those pieces we could uncache
+		 * and others we could not.</li></ul>
+		 */
 		@SuppressWarnings({ "rawtypes", "unchecked" })
 		protected QueryIterator createdCachedIterator(BeanQuery beanQuery) {
 			Operator operator = CriteriaToOperatorConverter
@@ -611,9 +633,9 @@ public class BrokerDashFactory {
 				return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans, iter);
 			}
 			
-			// we exhausted the iterator, so we have ALL the beans.
+			// we exhausted the QueryIterator, so we have all the beans we need to return.
 			
-			// now we have all our data, but before we return let's cache it for future lookups:
+			// ... but before we return let's cache everything for future lookups:
 			
 			if(cacheResults) {
 				List<String> knownBeanOids = new LinkedList<>();
