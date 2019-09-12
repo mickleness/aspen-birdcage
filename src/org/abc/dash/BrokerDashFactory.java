@@ -548,7 +548,13 @@ public class BrokerDashFactory {
 			}
 
 			Operator canonicalOperator = operator.getCanonicalOperator();
-			Collection<X2BaseBean> knownBeans = new TreeSet<>(orderBy);
+			Collection<X2BaseBean> knownBeans;
+			if(orderBy.getFieldHelpers().isEmpty()) {
+				//order doesn't matter!
+				knownBeans = new LinkedList<>();
+			} else {
+				knownBeans = new TreeSet<>(orderBy);
+			}
 			
 			//if a criteria said: "A==1 or A==2", then this splits them into two
 			//unique criteria "A==1" and "A==2"
@@ -629,7 +635,11 @@ public class BrokerDashFactory {
 			}
 			
 			if(iter.hasNext()) {
-				// too many beans; let's give up on caching:
+				// too many beans; let's give up on caching.
+				
+				// if knownBeans is a TreeSet: this is our worst-case scenario
+				// Here will keep consulting the TreeSet's comparator for every
+				// new bean, which may be expensive.
 				return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans, iter);
 			}
 			
