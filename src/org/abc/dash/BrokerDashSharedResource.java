@@ -46,7 +46,7 @@ public class BrokerDashSharedResource {
 	 */
 	@SuppressWarnings("rawtypes")
 	public static X2BaseBean getBeanFromGlobalCache(
-			PersistenceKey persistenceKey, Class beanClass, String beanOid) {
+			PersistenceKey persistenceKey, Class<?> beanClass, String beanOid) {
 		Objects.requireNonNull(persistenceKey);
 		Objects.requireNonNull(beanOid);
 
@@ -72,7 +72,7 @@ public class BrokerDashSharedResource {
 	/**
 	 * Return all the beans in a list of bean oids, or null if those beans were not readily available in the global cache.
 	 */
-	public static List<X2BaseBean> getBeansFromGlobalCache(PersistenceKey persistenceKey,Class beanType,List<String> beanOids) {
+	public static List<X2BaseBean> getBeansFromGlobalCache(PersistenceKey persistenceKey,Class<?> beanType,List<String> beanOids) {
 		List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
 		for(String beanOid : beanOids) {
 			X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanType, beanOid);
@@ -86,16 +86,16 @@ public class BrokerDashSharedResource {
 	CachePool cachePool;
 	Cache<Operator, QueryProfile> profiles;
 
-	Map<Class, Cache<CacheKey, List<String>>> cacheByBeanType;
+	Map<Class<?>, Cache<CacheKey, List<String>>> cacheByBeanType;
 	
 	protected BrokerDashSharedResource(CachePool cachePool) {
 		Objects.requireNonNull(cachePool);
 		this.cachePool = cachePool;
-		profiles = new Cache(cachePool);
+		profiles = new Cache<>(cachePool);
 		cacheByBeanType = new HashMap<>();
 	}
 
-	protected Cache<CacheKey, List<String>> getCache(Class beanClass, boolean createIfMissing) {
+	protected Cache<CacheKey, List<String>> getCache(Class<?> beanClass, boolean createIfMissing) {
 		synchronized(cacheByBeanType) {
 			Cache<CacheKey, List<String>> cache = cacheByBeanType.get(beanClass);
 			if(cache==null && createIfMissing) {
@@ -123,7 +123,6 @@ public class BrokerDashSharedResource {
 	 * split the original query into smaller pieces, and some of those pieces we could uncache
 	 * and others we could not.</li></ul>
 	 */
-	@SuppressWarnings({ "rawtypes", "unchecked" })
 	protected QueryIteratorDash createCachedIterator(X2Broker broker,BeanQuery beanQuery) {
 		
 		Operator operator = CriteriaToOperatorConverter
@@ -143,7 +142,8 @@ public class BrokerDashSharedResource {
 		dashIter.addCloseListener(profile);
 		return dashIter;
 	}
-	
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	protected QueryIteratorDash createDashIterator(X2Broker broker, BeanQuery beanQuery, Operator operator, QueryProfile profile) {
 		OrderByComparator orderBy = new OrderByComparator(false,
 				beanQuery.getOrderBy());
