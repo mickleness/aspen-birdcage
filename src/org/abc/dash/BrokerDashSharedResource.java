@@ -7,10 +7,8 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.TreeSet;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
 import org.abc.util.OrderByComparator;
@@ -132,7 +130,7 @@ public class BrokerDashSharedResource {
 				.createOperator(beanQuery.getCriteria());
 		
 		Operator template = operator.getTemplateOperator();
-		final QueryProfile profile;
+		QueryProfile profile;
 		synchronized(profiles) {
 			profile = profiles.get(template);
 			if(profile==null) {
