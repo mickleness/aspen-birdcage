@@ -47,182 +47,11 @@ import com.pump.util.Cache.CachePool;
  * the same cache.
  */
 public class BrokerDashFactory {
-	
-	static class Key {
-		Operator operator;
-		OrderByComparator orderBy;
-		
-		Key(Operator operator,OrderByComparator orderBy) {
-			Objects.requireNonNull(orderBy);
-			Objects.requireNonNull(operator);
-			this.operator = operator;
-			this.orderBy = orderBy;
-		}
-
-		@Override
-		public int hashCode() {
-			return operator.hashCode();
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if(!(obj instanceof Key))
-				return false;
-			Key other = (Key) obj;
-			if(!operator.equals(other.operator))
-				return false;
-			if(!orderBy.equals(other.orderBy))
-				return false;
-			return true;
-		}
-
-		@Override
-		public String toString() {
-			return "Key[ operator=\""+operator+"\", orderBy=\""+orderBy+"\"]";
-		}
-	}
-
-	/**
-	 * Return a bean from the global cache, or return null if the bean does not
-	 * exist in the cache.
-	 * 
-	 * @param persistenceKey
-	 *            the key identifying the database/client.
-	 * @param beanClass
-	 *            the type of bean to return. This is highly recommended for
-	 *            efficiency's sake, but if this is left null it will be derived
-	 *            from the bean oid.
-	 * @param beanOid
-	 *            the oid of the bean to return.
-	 * @return
-	 */
-	@SuppressWarnings("rawtypes")
-	public static X2BaseBean getBeanFromGlobalCache(
-			PersistenceKey persistenceKey, Class beanClass, String beanOid) {
-		Objects.requireNonNull(persistenceKey);
-		Objects.requireNonNull(beanOid);
-
-		X2ObjectCache x2cache = AppGlobals.getCache(persistenceKey);
-
-		if (beanClass == null) {
-			String prefix = beanOid.substring(0, Math.min(3, beanOid.length()));
-			BeanTablePath btp = BeanTablePath.getTableByName(prefix
-					.toUpperCase());
-			if (btp == null)
-				throw new IllegalArgumentException(
-						"Could not determine bean class for \"" + beanOid
-								+ "\".");
-			beanClass = btp.getBeanType();
-		}
-
-		Identity identity = new Identity(beanClass, beanClass,
-				new Object[] { beanOid });
-		X2BaseBean bean = (X2BaseBean) x2cache.lookup(identity);
-		return bean;
-	}
-
-	/**
-	 * Return all the beans in a list of bean oids, or null if those beans were not readily available in the global cache.
-	 */
-	public static List<X2BaseBean> getBeansFromGlobalCache(PersistenceKey persistenceKey,Class beanType,List<String> beanOids) {
-		List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
-		for(String beanOid : beanOids) {
-			X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanType, beanOid);
-			if(bean==null)
-				return null;
-			beans.add(bean);
-		}
-		return beans;
-	}
-	
-	protected static class BeanIteratorFromList extends QueryIterator {
-		Collection<X2BaseBean> beans;
-		QueryIterator queryIterator;
-		PersistenceKey persistenceKey;
-		
-		/**
-		 * Create an iterator that will walk through a collection of beans.
-		 */
-		public BeanIteratorFromList(PersistenceKey persistenceKey,Collection<X2BaseBean> beans) {
-			this(persistenceKey, beans, null);
-		}
-
-		/**
-		 * Create an iterator that will walk through a collection of beans and a QueryIterator.
-		 * <p>
-		 * Every time a new bean is requested: if possible we pull a bean from the QueryIterator
-		 * and add it to the collection of beans. Then we pull the first bean from the collection of beans.
-		 * <p>
-		 * Sometimes the collection of incoming beans is a LinkedList, so this approach will give a FIFO order.
-		 * Sometimes the collection of incoming beans is a TreeSet, so this approach will use the TreeSet's
-		 * Comparator to merge the results.
-		 * 
-		 * @param persistenceKey the PersistenceKey associated with this iterator
-		 * @param beans the optional collection of beans to walk through
-		 * @param queryIterator the optional QueryIterator to walk through
-		 */
-		public BeanIteratorFromList(PersistenceKey persistenceKey, Collection<X2BaseBean> beans, QueryIterator queryIterator) {
-			Objects.requireNonNull(persistenceKey);
-			this.beans = beans==null ? new LinkedList<X2BaseBean>() : beans;
-			this.queryIterator = queryIterator;
-			this.persistenceKey = persistenceKey;
-		}
-
-		@Override
-		protected void finalize() {
-			close();
-		}
-
-		@Override
-		public void close() {
-			if(queryIterator!=null)
-				queryIterator.close();
-			queryIterator = null;
-			beans.clear();
-		}
-
-		@Override
-		protected Iterator getIterator(PersistenceBroker arg0, Query arg1) {
-			throw new UnsupportedOperationException();
-		}
-
-		@Override
-		public Object next() {
-			if(queryIterator!=null) {
-				if(queryIterator.hasNext()) {
-					X2BaseBean bean = (X2BaseBean) queryIterator.next();
-					beans.add(bean);
-				}
-				if(!queryIterator.hasNext())
-					queryIterator = null;
-			}
-			return beans.iterator().next();
-		}
-
-		@Override
-		public boolean hasNext() {
-			if(!beans.isEmpty())
-				return true;
-			if(queryIterator!=null && queryIterator.hasNext())
-				return true;
-			return false;
-		}
-
-		@Override
-		public PersistenceKey getPersistenceKey() {
-			return persistenceKey;
-		}
-
-		@Override
-		public void remove() {
-			throw new UnsupportedOperationException();
-		}
-	}
 
 	static class DashInvocationHandler implements InvocationHandler {
 		static Method method_getIteratorByQuery;
 		static Method method_getBeanByQuery;
-		static Method method_getCachePool;
+		static Method method_getSharedResource;
 		static Method method_clearCache;
 		static Method method_rollbackTransaction1;
 		static Method method_rollbackTransaction2;
@@ -241,8 +70,8 @@ public class BrokerDashFactory {
 
 		static {
 			try {
-				method_getCachePool = BrokerDash.class
-						.getMethod("getCachePool");
+				method_getSharedResource = BrokerDash.class
+						.getMethod("getSharedResource");
 				method_getIteratorByQuery = X2Broker.class.getMethod(
 						"getIteratorByQuery", Query.class);
 				method_getBeanByQuery = X2Broker.class.getMethod(
@@ -291,18 +120,14 @@ public class BrokerDashFactory {
 
 		X2Broker broker;
 		boolean active = initialized;
-		CachePool cachePool;
-		Map<Class, Cache<Key, Object>> cacheByBeanType;
+		BrokerDashSharedResource sharedResource;
 
 		DashInvocationHandler(X2Broker broker,
-				Map<Class, Cache<Key, Object>> cacheByBeanType,
-				CachePool cachePool) {
+				BrokerDashSharedResource sharedResource) {
 			Objects.requireNonNull(broker);
-			Objects.requireNonNull(cacheByBeanType);
-			Objects.requireNonNull(cachePool);
-			this.cacheByBeanType = cacheByBeanType;
+			Objects.requireNonNull(sharedResource);
 			this.broker = broker;
-			this.cachePool = cachePool;
+			this.sharedResource = sharedResource;
 		}
 
 		protected void handleException(Exception e) {
@@ -320,8 +145,8 @@ public class BrokerDashFactory {
 
 			// handle methods unique to the BrokerDash interface:
 
-			if (method_getCachePool.equals(method)) {
-				return cachePool;
+			if (method_getSharedResource.equals(method)) {
+				return sharedResource;
 			}
 
 			// if possible: intercept methods using our caching model/layer
@@ -346,7 +171,7 @@ public class BrokerDashFactory {
 			if (method_getIteratorByQuery.equals(method)
 					&& args[0] instanceof BeanQuery) {
 				BeanQuery beanQuery = (BeanQuery) args[0];
-				QueryIterator returnValue = createdCachedIterator(beanQuery);
+				QueryIterator returnValue = sharedResource.createdCachedIterator(broker, beanQuery);
 				return returnValue;
 			} else if (method_getBeanByQuery.equals(method)
 					&& args[0] instanceof BeanQuery) {
@@ -405,26 +230,25 @@ public class BrokerDashFactory {
 			} else if (method_clearCache.equals(method)
 					|| method_rollbackTransaction1.equals(method)
 					|| method_rollbackTransaction2.equals(method)) {
-				cachePool.clear();
+				sharedResource.clearAll();
 			} else if ((method_deleteBean.equals(method) || method.getName()
 					.startsWith("saveBean")) && args[0] instanceof X2BaseBean) {
 				X2BaseBean bean = (X2BaseBean) args[0];
 				Class t = bean.getClass();
-				Cache<Key, Object> cache = cacheByBeanType.get(t);
+				Cache<CacheKey, Object> cache = sharedResource.getCache(t, false);
 				if (cache != null)
 					cache.clear();
 			} else if (method_deleteBeanByOid.equals(method)) {
 				Class beanType = (Class) args[0];
-				Cache<Key, Object> cache = cacheByBeanType
-						.get(beanType);
+				Cache<CacheKey, Object> cache = sharedResource.getCache(beanType, false);
 				if (cache != null)
 					cache.clear();
 			} else if (method_deleteByQuery.equals(method)
 					|| method_executeUpdateQuery.equals(method)
 					|| method_executeInsertQuery.equals(method)) {
 				Query query = (Query) args[0];
-				Cache<Key, Object> cache = cacheByBeanType.get(query
-						.getBaseClass());
+				Cache<CacheKey, Object> cache = sharedResource.getCache(query
+						.getBaseClass(), false);
 				if (cache != null)
 					cache.clear();
 			}
@@ -473,229 +297,13 @@ public class BrokerDashFactory {
 				return map;
 			}
 		}
-
-		/**
-		 * Create a QueryIterator for a BeanQuery.
-		 * <p>
-		 * In an ideal case: this will use cached data to completely avoid making a
-		 * database query.
-		 * <p>
-		 * This method should never issue more than one database query. There are 3
-		 * database queries this can issue:
-		 * <ul><li>The original incoming query as-is.</li>
-		 * <li>A query to retrieve beans based on oids. If this caching layer was able to identify
-		 * the exact oids we need, but those beans are no longer in Aspen's cache: a query based
-		 * on the oids should be pretty efficient.</li>
-		 * <li>A query to retrieve a subset of the original query. In this case we were able to
-		 * split the original query into smaller pieces, and some of those pieces we could uncache
-		 * and others we could not.</li></ul>
-		 */
-		@SuppressWarnings({ "rawtypes", "unchecked" })
-		protected QueryIterator createdCachedIterator(BeanQuery beanQuery) {
-			Operator operator = CriteriaToOperatorConverter
-					.createOperator(beanQuery.getCriteria());
-			OrderByComparator orderBy = new OrderByComparator(false,
-					beanQuery.getOrderBy());
-			Key cacheKey = new Key(operator, orderBy);
-			
-			Cache<Key, Object> cache;
-			synchronized(cacheByBeanType) {
-				cache = cacheByBeanType.get(beanQuery
-						.getBaseClass());
-				if (cache == null) {
-					cache = new Cache(cachePool);
-					cacheByBeanType.put(beanQuery.getBaseClass(), cache);
-				}
-			}
-
-			Object cacheValue = cache.get(cacheKey);
-			List<String> beanOids;
-			boolean cacheResults;
-			if(cacheValue instanceof List) {
-				beanOids = (List<String>) cacheValue;
-				cacheResults = false;
-			} else if(cacheValue instanceof AtomicInteger) {
-				AtomicInteger i = (AtomicInteger) cacheValue;
-				if(i.intValue()<0) {
-					cacheResults = false;
-				} else {
-					cacheResults = i.incrementAndGet() > 5;
-				}
-				beanOids = null;
-			} else {
-				cache.put(cacheKey, new AtomicInteger(0));
-				beanOids = null;
-				cacheResults = false;
-			}
-			
-			if (beanOids != null) {
-				List<X2BaseBean> beans = getBeansFromGlobalCache(broker.getPersistenceKey(), beanQuery.getBaseClass(), beanOids);
-				if(beans!=null) {
-					//this is our ideal case: we know the complete query results
-					return new BeanIteratorFromList(broker.getPersistenceKey(), beans);
-				}
-				
-				// we know the exact oids, but those beans aren't in Aspen's cache anymore.
-				
-				// we can at least rewrite the query:
-				Criteria oidCriteria = new Criteria();
-				oidCriteria.addIn(X2BaseBean.COL_OID, beanOids);
-				beanQuery = new BeanQuery(beanQuery.getBaseClass(), oidCriteria);
-				for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
-					beanQuery.addOrderBy(fieldHelper);
-				}
-				return broker.getIteratorByQuery(beanQuery);
-			}
-
-			Operator canonicalOperator = operator.getCanonicalOperator();
-			Collection<X2BaseBean> knownBeans;
-			if(orderBy.getFieldHelpers().isEmpty()) {
-				//order doesn't matter!
-				knownBeans = new LinkedList<>();
-			} else {
-				knownBeans = new TreeSet<>(orderBy);
-			}
-			
-			//if a criteria said: "A==1 or A==2", then this splits them into two
-			//unique criteria "A==1" and "A==2"
-			Collection<Operator> splitOperators = canonicalOperator.split();
-			List<Operator> splitOperatorsToCache = new LinkedList<>();
-			if(splitOperators.size()>1) {
-				Iterator<Operator> splitIter = splitOperators.iterator();
-				
-				boolean removedOperators = false;
-				while(splitIter.hasNext()) {
-					Operator splitOperator = splitIter.next();
-					Key splitKey = new Key(splitOperator, orderBy);
-					
-					Object splitCacheValue = cache.get(splitKey);
-					List<String> splitOids = null;
-					if(splitCacheValue instanceof List) {
-						splitOids = (List<String>) splitCacheValue;
-	
-						List<X2BaseBean> splitBeans = getBeansFromGlobalCache(broker.getPersistenceKey(), 
-								beanQuery.getBaseClass(), 
-								splitOids);
-						if(splitBeans!=null) {
-							removedOperators = true;
-							knownBeans.addAll(splitBeans);
-							splitIter.remove();
-						} else {
-							// we know the exact oids, but those beans aren't in Aspen's cache anymore.
-							// this is a shame, but there's nothing this caching layer can do to help.
-						}
-					} else if(splitCacheValue instanceof AtomicInteger) {
-						AtomicInteger i = (AtomicInteger) splitCacheValue;
-						int attempts = i.get();
-						if(attempts<5) {
-							i.incrementAndGet();
-						} else if(attempts<10) {
-							splitOperatorsToCache.add(splitOperator);
-						}
-					} else {
-						cache.put(splitKey, new AtomicInteger(0));
-					}
-				}
-			
-				if(splitOperators.isEmpty()) {
-					// we broke the criteria down into small pieces and looked up every 
-					// piece. We only had to pay the cost of sorting (which might include
-					// its own queries)
-					return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans);
-				} else if(removedOperators) {
-					// we resolved *some* operators, but not all of them.
-					Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
-					Criteria trimmedCriteria = CriteriaToOperatorConverter.createCriteria(trimmedOperator);
-					
-					// so we're going to make a new (narrower) query, and merge its results with knownBeans
-					beanQuery = new BeanQuery(beanQuery.getBaseClass(), trimmedCriteria);
-					for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
-						beanQuery.addOrderBy(fieldHelper);
-					}
-				}
-			}
-			
-			if(knownBeans.isEmpty()) {
-				// we have a blank slate (no cached info came up)
-				
-				// so let's just dump incoming beans in a list. The order is going to be correct,
-				// because the order is coming straight from the source. So there's no need
-				// to use a TreeSet with a comparator anymore:
-				
-				knownBeans = new LinkedList<>();
-			}
-
-			// grab the first 1000 beans from our query:
-			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
-			int ctr = 0;
-			while(iter.hasNext() && ctr<1000) {
-				X2BaseBean bean = (X2BaseBean) iter.next();
-				knownBeans.add(bean);
-				ctr++;
-			}
-			
-			if(iter.hasNext()) {
-				// too many beans; let's give up on caching.
-				
-				// if knownBeans is a TreeSet: this is our worst-case scenario
-				// Here will keep consulting the TreeSet's comparator for every
-				// new bean, which may be expensive.
-				return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans, iter);
-			}
-			
-			// we exhausted the QueryIterator, so we have all the beans we need to return.
-			
-			// ... but before we return let's cache everything for future lookups:
-			
-			if(cacheResults) {
-				List<String> knownBeanOids = new LinkedList<>();
-				for(X2BaseBean bean : knownBeans) {
-					knownBeanOids.add(bean.getOid());
-				}
-				cache.put(cacheKey, knownBeanOids);
-			}
-			
-			if(!splitOperatorsToCache.isEmpty()) {
-				Map<Operator, List<String>> oidsByOperator = new HashMap<>();
-				scanOps : for(Operator op : splitOperatorsToCache) {
-					List<String> oids = oidsByOperator.get(op);
-					if(oids==null) {
-						oids = new LinkedList<>();
-						oidsByOperator.put(op, oids);
-					}
-					for(X2BaseBean bean : knownBeans) {
-						try {
-							if(op.evaluate(BrokerDash.CONTEXT, bean)) {
-								oids.add(bean.getOid());
-							}
-						} catch(Exception e) {
-							AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluated \""+op+"\" on \""+bean+"\"", e);
-							// store a large value in here so we'll never try caching this particular Operator again
-							cache.put(new Key(op, orderBy), new AtomicInteger(100));
-							oidsByOperator.remove(op);
-							continue scanOps;
-						}
-					}
-				}
-				
-				for(Entry<Operator, List<String>> entry : oidsByOperator.entrySet()) {
-					Key splitKey = new Key(entry.getKey(), orderBy);
-					cache.put(splitKey, entry.getValue());
-				}
-			}
-
-			return new BeanIteratorFromList(broker.getPersistenceKey(), knownBeans);
-		}
 	}
-
-	protected CachePool cachePool;
-
-	@SuppressWarnings("rawtypes")
-	Map<Class, Cache<Key, Object>> cacheByBeanType;
+	
+	BrokerDashSharedResource sharedResource;
 
 	public BrokerDashFactory(int cacheSizeLimit, long cacheDurationLimit) {
-		cachePool = new CachePool(cacheSizeLimit, cacheDurationLimit, -1);
-		cacheByBeanType = Collections.synchronizedMap(new HashMap<Class, Cache<Key, Object>>());
+		CachePool cachePool = new CachePool(cacheSizeLimit, cacheDurationLimit, -1);
+		sharedResource = new BrokerDashSharedResource(cachePool);
 	}
 
 	/**
@@ -707,16 +315,15 @@ public class BrokerDashFactory {
 	public BrokerDash convertToBrokerDash(X2Broker broker) {
 		if (broker instanceof BrokerDash) {
 			BrokerDash bd = (BrokerDash) broker;
-			CachePool cachePool = bd.getCachePool();
-			if (cachePool == this.cachePool)
+			BrokerDashSharedResource sharedResource = bd.getSharedResource();
+			if (sharedResource == this.sharedResource)
 				return bd;
 		}
 		return createBrokerDash(broker);
 	}
 
 	private BrokerDash createBrokerDash(X2Broker broker) {
-		InvocationHandler handler = new DashInvocationHandler(broker,
-				cacheByBeanType, cachePool);
+		InvocationHandler handler = new DashInvocationHandler(broker, sharedResource);
 
 		// include all the old interfaces, in case something else like BrokerCub
 		// was already attached

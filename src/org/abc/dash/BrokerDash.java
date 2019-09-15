@@ -92,7 +92,7 @@ public interface BrokerDash extends X2Broker {
 	};
 
 	/**
-	 * The CachePool any intermediate caches should use.
+	 * Multiple BrokerDashes may share the same BrokerDashSharedResource.
 	 */
-	CachePool getCachePool();
+	BrokerDashSharedResource getSharedResource();
 }

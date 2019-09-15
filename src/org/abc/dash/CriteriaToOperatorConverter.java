@@ -20,8 +20,6 @@ import com.pump.data.operator.Or;
 import com.pump.text.WildcardPattern;
 
 public class CriteriaToOperatorConverter {
-	// TODO: add support for X2Criteria#addEqualToIgnoreCase, and anything else
-	// that comes up.
 
 	static WildcardPattern.Format sqlFormat = new WildcardPattern.Format();
 	static {
