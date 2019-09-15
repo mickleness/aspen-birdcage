@@ -32,8 +32,6 @@ import com.pump.util.Cache.CachePool;
 
 public class BrokerDashSharedResource {
 	
-	protected static final int MAX_OID_LIST_SIZE = 500;
-	
 	/**
 	 * Return a bean from the global cache, or return null if the bean does not
 	 * exist in the cache.
@@ -152,7 +150,7 @@ public class BrokerDashSharedResource {
 		OrderByComparator orderBy = new OrderByComparator(false,
 				beanQuery.getOrderBy());
 		
-		if(!isCaching(orderBy, profile)) {
+		if(!isCaching(orderBy, profile, beanQuery)) {
 			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
 			QueryIteratorDash dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
 			return dashIter;
@@ -194,7 +192,8 @@ public class BrokerDashSharedResource {
 			Collection<X2BaseBean> beansToReturn = new LinkedList<>();
 			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
 			int ctr = 0;
-			while(iter.hasNext() && ctr<MAX_OID_LIST_SIZE) {
+			int maxSize = getMaxOidListSize(false, beanQuery);
+			while(iter.hasNext() && ctr<maxSize) {
 				X2BaseBean bean = (X2BaseBean) iter.next();
 				beansToReturn.add(bean);
 				ctr++;
@@ -277,7 +276,8 @@ public class BrokerDashSharedResource {
 
 		QueryIterator iter = broker.getIteratorByQuery(beanQuery);
 		int ctr = 0;
-		while(iter.hasNext() && ctr<MAX_OID_LIST_SIZE) {
+		int maxSize = getMaxOidListSize(removedOneOrMoreOperators, beanQuery);
+		while(iter.hasNext() && ctr<maxSize) {
 			X2BaseBean bean = (X2BaseBean) iter.next();
 			knownBeans.add(bean);
 			ctr++;
@@ -333,7 +333,7 @@ public class BrokerDashSharedResource {
 		}
 	}
 	
-	protected boolean isCaching(OrderByComparator orderBy, QueryProfile profile) {
+	protected boolean isCaching(OrderByComparator orderBy, QueryProfile profile, BeanQuery beanQuery) {
 		if(profile.getCounter()<10) {
 			// The Dash caching layer is supposed to help address
 			// frequent repetitive queries. Don't interfere with 
@@ -345,7 +345,7 @@ public class BrokerDashSharedResource {
 			return false;
 		}
 		
-		if(profile.getCounter() > 100 && profile.getAverageReturnCount() > MAX_OID_LIST_SIZE * 9 / 10) {
+		if(profile.getCounter() > 100 && profile.getAverageReturnCount() > getMaxOidListSize(false, beanQuery)) {
 			// If the odds are decent that we're going to get close to
 			// our limit: give up now without additional overhead.
 			
@@ -353,6 +353,13 @@ public class BrokerDashSharedResource {
 		}
 		
 		return true;
+	}
+	
+	/**
+	 * Return the maximum number of oids we'll cache.
+	 */
+	protected int getMaxOidListSize(boolean involvedSplit,BeanQuery beanQuery) {
+		return 500;
 	}
 	
 	protected boolean isCachingSplit(OrderByComparator orderBy, QueryProfile profile) {
