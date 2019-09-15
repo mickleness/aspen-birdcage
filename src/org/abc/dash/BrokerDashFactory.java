@@ -5,46 +5,30 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.TreeSet;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
-import org.abc.util.OrderByComparator;
-import org.apache.ojb.broker.Identity;
-import org.apache.ojb.broker.PersistenceBroker;
-import org.apache.ojb.broker.metadata.FieldHelper;
-import org.apache.ojb.broker.query.Criteria;
 import org.apache.ojb.broker.query.Query;
 
 import com.follett.fsc.core.framework.persistence.BeanQuery;
 import com.follett.fsc.core.framework.persistence.InsertQuery;
 import com.follett.fsc.core.framework.persistence.UpdateQuery;
-import com.follett.fsc.core.framework.persistence.X2ObjectCache;
-import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
-import com.follett.fsc.core.k12.beans.path.BeanTablePath;
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.web.AppGlobals;
-import com.pump.data.operator.Operator;
 import com.pump.util.Cache;
 import com.pump.util.Cache.CachePool;
 
 /**
  * This converts X2Brokers into BrokerDashes.
  * <p>
- * All BrokerDashes created from the same BrokerDashFactory share the same set
- * of Caches. This may be useful when you're trying to write a multithreaded
- * tool: each thread needs its own broker, but each of those brokers can share
- * the same cache.
+ * All BrokerDashes created from the same BrokerDashFactory share the same
+ * BrokerDashSharedResource / CachePool.
  */
 public class BrokerDashFactory {
 
@@ -171,7 +155,7 @@ public class BrokerDashFactory {
 			if (method_getIteratorByQuery.equals(method)
 					&& args[0] instanceof BeanQuery) {
 				BeanQuery beanQuery = (BeanQuery) args[0];
-				QueryIterator returnValue = sharedResource.createdCachedIterator(broker, beanQuery);
+				QueryIterator returnValue = sharedResource.createCachedIterator(broker, beanQuery);
 				return returnValue;
 			} else if (method_getBeanByQuery.equals(method)
 					&& args[0] instanceof BeanQuery) {
@@ -235,19 +219,19 @@ public class BrokerDashFactory {
 					.startsWith("saveBean")) && args[0] instanceof X2BaseBean) {
 				X2BaseBean bean = (X2BaseBean) args[0];
 				Class t = bean.getClass();
-				Cache<CacheKey, Object> cache = sharedResource.getCache(t, false);
+				Cache<CacheKey, List<String>> cache = sharedResource.getCache(t, false);
 				if (cache != null)
 					cache.clear();
 			} else if (method_deleteBeanByOid.equals(method)) {
 				Class beanType = (Class) args[0];
-				Cache<CacheKey, Object> cache = sharedResource.getCache(beanType, false);
+				Cache<CacheKey, List<String>> cache = sharedResource.getCache(beanType, false);
 				if (cache != null)
 					cache.clear();
 			} else if (method_deleteByQuery.equals(method)
 					|| method_executeUpdateQuery.equals(method)
 					|| method_executeInsertQuery.equals(method)) {
 				Query query = (Query) args[0];
-				Cache<CacheKey, Object> cache = sharedResource.getCache(query
+				Cache<CacheKey, List<String>> cache = sharedResource.getCache(query
 						.getBaseClass(), false);
 				if (cache != null)
 					cache.clear();

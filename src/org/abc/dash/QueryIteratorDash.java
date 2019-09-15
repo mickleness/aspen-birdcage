@@ -1,21 +1,34 @@
 package org.abc.dash;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Objects;
 
 import org.apache.ojb.broker.PersistenceBroker;
 import org.apache.ojb.broker.query.Query;
 
+import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
-import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 
 class QueryIteratorDash extends QueryIterator {
+	
+	static interface CloseListener {
+		public void closedIterator(int returnCount,boolean hasNext);
+	}
+	
 	Collection<X2BaseBean> beans;
 	QueryIterator queryIterator;
 	PersistenceKey persistenceKey;
+	List<CloseListener> closeListeners = new ArrayList<>();
+	
+	/**
+	 * The number of successful invocations of {@link #next()}.
+	 */
+	int nextCounter = 0;
 	
 	/**
 	 * Create an iterator that will walk through a collection of beans.
@@ -44,6 +57,14 @@ class QueryIteratorDash extends QueryIterator {
 		this.queryIterator = queryIterator;
 		this.persistenceKey = persistenceKey;
 	}
+	
+	public void addCloseListener(CloseListener l) {
+		closeListeners.add(l);
+	}
+	
+	public void removeCloseListener(CloseListener l) {
+		closeListeners.remove(l);
+	}
 
 	@Override
 	protected void finalize() {
@@ -52,10 +73,17 @@ class QueryIteratorDash extends QueryIterator {
 
 	@Override
 	public void close() {
+		
+		boolean hasNext = hasNext();
+		
 		if(queryIterator!=null)
 			queryIterator.close();
 		queryIterator = null;
 		beans.clear();
+		
+		for(CloseListener listener : closeListeners.toArray(new CloseListener[closeListeners.size()])) {
+			listener.closedIterator(nextCounter, hasNext);
+		}
 	}
 
 	@Override
@@ -73,7 +101,9 @@ class QueryIteratorDash extends QueryIterator {
 			if(!queryIterator.hasNext())
 				queryIterator = null;
 		}
-		return beans.iterator().next();
+		X2BaseBean returnValue = beans.iterator().next();
+		nextCounter++;
+		return returnValue;
 	}
 
 	@Override

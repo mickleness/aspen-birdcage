@@ -31,6 +31,9 @@ import com.pump.util.Cache;
 import com.pump.util.Cache.CachePool;
 
 public class BrokerDashSharedResource {
+	
+	protected static final int MAX_OID_LIST_SIZE = 500;
+	
 	/**
 	 * Return a bean from the global cache, or return null if the bean does not
 	 * exist in the cache.
@@ -85,18 +88,20 @@ public class BrokerDashSharedResource {
 	}
 	
 	CachePool cachePool;
+	Cache<Operator, QueryProfile> profiles;
 
-	Map<Class, Cache<CacheKey, Object>> cacheByBeanType;
+	Map<Class, Cache<CacheKey, List<String>>> cacheByBeanType;
 	
-	public BrokerDashSharedResource(CachePool cachePool) {
+	protected BrokerDashSharedResource(CachePool cachePool) {
 		Objects.requireNonNull(cachePool);
-		this.cachePool = cachePool;	
-		cacheByBeanType = new HashMap<Class, Cache<CacheKey, Object>>();
+		this.cachePool = cachePool;
+		profiles = new Cache(cachePool);
+		cacheByBeanType = new HashMap<>();
 	}
 
-	public Cache<CacheKey, Object> getCache(Class beanClass, boolean createIfMissing) {
+	protected Cache<CacheKey, List<String>> getCache(Class beanClass, boolean createIfMissing) {
 		synchronized(cacheByBeanType) {
-			Cache<CacheKey, Object> cache = cacheByBeanType.get(beanClass);
+			Cache<CacheKey, List<String>> cache = cacheByBeanType.get(beanClass);
 			if(cache==null && createIfMissing) {
 				cache = new Cache<>(cachePool);
 				cacheByBeanType.put(beanClass, cache);
@@ -107,7 +112,7 @@ public class BrokerDashSharedResource {
 
 
 	/**
-	 * Create a QueryIterator for a BeanQuery.
+	 * Create a QueryIteratorDash for a BeanQuery.
 	 * <p>
 	 * In an ideal case: this will use cached data to completely avoid making a
 	 * database query.
@@ -123,192 +128,202 @@ public class BrokerDashSharedResource {
 	 * and others we could not.</li></ul>
 	 */
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	protected QueryIterator createdCachedIterator(X2Broker broker,BeanQuery beanQuery) {
+	protected QueryIteratorDash createCachedIterator(X2Broker broker,BeanQuery beanQuery) {
+		
 		Operator operator = CriteriaToOperatorConverter
 				.createOperator(beanQuery.getCriteria());
+		
+		Operator template = operator.getTemplateOperator();
+		final QueryProfile profile;
+		synchronized(profiles) {
+			profile = profiles.get(template);
+			if(profile==null) {
+				profile = new QueryProfile();
+				profiles.put(template, profile);
+			}
+		}
+		
+		QueryIteratorDash dashIter = createDashIterator(broker, beanQuery, operator, profile);
+		dashIter.addCloseListener(profile);
+		return dashIter;
+	}
+	
+	protected QueryIteratorDash createDashIterator(X2Broker broker, BeanQuery beanQuery, Operator operator, QueryProfile profile) {
 		OrderByComparator orderBy = new OrderByComparator(false,
 				beanQuery.getOrderBy());
-		CacheKey cacheKey = new CacheKey(operator, orderBy);
 		
-		Cache<CacheKey, Object> cache = getCache(beanQuery.getBaseClass(), true);
-
-		Object cacheValue = cache.get(cacheKey);
-		List<String> beanOids;
-		boolean cacheResults;
-		if(cacheValue instanceof List) {
-			beanOids = (List<String>) cacheValue;
-			cacheResults = false;
-		} else if(cacheValue instanceof AtomicInteger) {
-			AtomicInteger i = (AtomicInteger) cacheValue;
-			if(i.intValue()<0) {
-				cacheResults = false;
-			} else {
-				cacheResults = i.incrementAndGet() > 5;
-			}
-			beanOids = null;
-		} else {
-			cache.put(cacheKey, new AtomicInteger(0));
-			beanOids = null;
-			cacheResults = false;
+		if(!isCaching(orderBy, profile)) {
+			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
+			QueryIteratorDash dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
+			return dashIter;
 		}
+		
+		Cache<CacheKey, List<String>> cache = getCache(beanQuery.getBaseClass(), true);
+		CacheKey cacheKey = new CacheKey(operator, orderBy);
+		List<String> beanOids = cache.get(cacheKey);
 		
 		if (beanOids != null) {
 			List<X2BaseBean> beans = getBeansFromGlobalCache(broker.getPersistenceKey(), beanQuery.getBaseClass(), beanOids);
 			if(beans!=null) {
-				//this is our ideal case: we know the complete query results
+				// This is our ideal case: we know the complete query results
 				return new QueryIteratorDash(broker.getPersistenceKey(), beans);
 			}
 			
-			// we know the exact oids, but those beans aren't in Aspen's cache anymore.
+			// We know the exact oids, but those beans aren't in Aspen's cache 
+			// anymore. We can at least rewrite the query:
 			
-			// we can at least rewrite the query:
 			Criteria oidCriteria = new Criteria();
 			oidCriteria.addIn(X2BaseBean.COL_OID, beanOids);
 			beanQuery = new BeanQuery(beanQuery.getBaseClass(), oidCriteria);
 			for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
 				beanQuery.addOrderBy(fieldHelper);
 			}
-			return broker.getIteratorByQuery(beanQuery);
+
+			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
+			QueryIteratorDash dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
+			return dashIter;
 		}
+		
+		// we couldn't retrieve the entire query results from our cache
 
 		Operator canonicalOperator = operator.getCanonicalOperator();
+		Collection<Operator> splitOperators = canonicalOperator.split();
+
+		if(splitOperators.size() <= 1 || !isCachingSplit(orderBy, profile)) {
+			// this is the simple scenario (no splitting)
+			Collection<X2BaseBean> beansToReturn = new LinkedList<>();
+			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
+			int ctr = 0;
+			while(iter.hasNext() && ctr<MAX_OID_LIST_SIZE) {
+				X2BaseBean bean = (X2BaseBean) iter.next();
+				beansToReturn.add(bean);
+				ctr++;
+			}
+			
+			if(iter.hasNext()) {
+				// too many beans; let's give up on caching.
+				return new QueryIteratorDash(broker.getPersistenceKey(), beansToReturn, iter);
+			}
+			
+			// We have all the beans. Cache the oids for next time and return.
+
+			beanOids = new LinkedList<>();
+			for(X2BaseBean bean : beansToReturn) {
+				beanOids.add(bean.getOid());
+			}
+			cache.put(cacheKey, beanOids);
+			
+			return new QueryIteratorDash(broker.getPersistenceKey(), beansToReturn, null);
+		}
+		
 		Collection<X2BaseBean> knownBeans;
 		if(orderBy.getFieldHelpers().isEmpty()) {
-			//order doesn't matter!
+			//order doesn't matter
 			knownBeans = new LinkedList<>();
 		} else {
 			knownBeans = new TreeSet<>(orderBy);
 		}
 		
-		//if a criteria said: "A==1 or A==2", then this splits them into two
-		//unique criteria "A==1" and "A==2"
-		Collection<Operator> splitOperators = canonicalOperator.split();
-		List<Operator> splitOperatorsToCache = new LinkedList<>();
-		if(splitOperators.size()>1) {
-			Iterator<Operator> splitIter = splitOperators.iterator();
+		Iterator<Operator> splitIter = splitOperators.iterator();
+		
+		boolean removedOneOrMoreOperators = false;
+		while(splitIter.hasNext()) {
+			Operator splitOperator = splitIter.next();
+			CacheKey splitKey = new CacheKey(splitOperator, orderBy);
 			
-			boolean removedOperators = false;
-			while(splitIter.hasNext()) {
-				Operator splitOperator = splitIter.next();
-				CacheKey splitKey = new CacheKey(splitOperator, orderBy);
-				
-				Object splitCacheValue = cache.get(splitKey);
-				List<String> splitOids = null;
-				if(splitCacheValue instanceof List) {
-					splitOids = (List<String>) splitCacheValue;
-
-					List<X2BaseBean> splitBeans = getBeansFromGlobalCache(broker.getPersistenceKey(), 
-							beanQuery.getBaseClass(), 
-							splitOids);
-					if(splitBeans!=null) {
-						removedOperators = true;
-						knownBeans.addAll(splitBeans);
-						splitIter.remove();
-					} else {
-						// we know the exact oids, but those beans aren't in Aspen's cache anymore.
-						// this is a shame, but there's nothing this caching layer can do to help.
-					}
-				} else if(splitCacheValue instanceof AtomicInteger) {
-					AtomicInteger i = (AtomicInteger) splitCacheValue;
-					int attempts = i.get();
-					if(attempts<5) {
-						i.incrementAndGet();
-					} else if(attempts<10) {
-						splitOperatorsToCache.add(splitOperator);
-					}
+			List<String> splitOids = cache.get(splitKey);
+			if(splitOids!=null) {
+				List<X2BaseBean> splitBeans = 
+					getBeansFromGlobalCache(broker.getPersistenceKey(), 
+						beanQuery.getBaseClass(), splitOids);
+				if(splitBeans!=null) {
+					// great: we got *some* of the beans by looking at a split query
+					removedOneOrMoreOperators = true;
+					knownBeans.addAll(splitBeans);
+					splitIter.remove();
 				} else {
-					cache.put(splitKey, new AtomicInteger(0));
+					// We know the exact oids, but those beans aren't in Aspen's cache anymore.
+					// This splitOperator is a lost cause now: just treat it like any other query.
+					cache.remove(splitKey);
 				}
 			}
-		
-			if(splitOperators.isEmpty()) {
-				// we broke the criteria down into small pieces and looked up every 
-				// piece. We only had to pay the cost of sorting (which might include
-				// its own queries)
-				return new QueryIteratorDash(broker.getPersistenceKey(), knownBeans);
-			} else if(removedOperators) {
-				// we resolved *some* operators, but not all of them.
-				Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
-				Criteria trimmedCriteria = CriteriaToOperatorConverter.createCriteria(trimmedOperator);
-				
-				// so we're going to make a new (narrower) query, and merge its results with knownBeans
-				beanQuery = new BeanQuery(beanQuery.getBaseClass(), trimmedCriteria);
-				for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
-					beanQuery.addOrderBy(fieldHelper);
-				}
+		}
+	
+		if(splitOperators.isEmpty()) {
+			// we broke the criteria down into small pieces and looked up every 
+			// piece. We only had to pay the cost of sorting
+			return new QueryIteratorDash(broker.getPersistenceKey(), knownBeans);
+		} else if(removedOneOrMoreOperators) {
+			// we resolved *some* operators, but not all of them.
+			Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
+			Criteria trimmedCriteria = CriteriaToOperatorConverter.createCriteria(trimmedOperator);
+			
+			// ... so we're going to make a new (narrower) query, and merge its results with knownBeans
+			beanQuery = new BeanQuery(beanQuery.getBaseClass(), trimmedCriteria);
+			for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
+				beanQuery.addOrderBy(fieldHelper);
 			}
 		}
 		
 		if(knownBeans.isEmpty()) {
-			// we have a blank slate (no cached info came up)
+			// No cached info came up so far.
 			
-			// so let's just dump incoming beans in a list. The order is going to be correct,
+			// ... so let's just dump incoming beans in a list. The order is going to be correct,
 			// because the order is coming straight from the source. So there's no need
 			// to use a TreeSet with a comparator anymore:
 			
 			knownBeans = new LinkedList<>();
 		}
 
-		// grab the first 1000 beans from our query:
 		QueryIterator iter = broker.getIteratorByQuery(beanQuery);
 		int ctr = 0;
-		while(iter.hasNext() && ctr<1000) {
+		while(iter.hasNext() && ctr<MAX_OID_LIST_SIZE) {
 			X2BaseBean bean = (X2BaseBean) iter.next();
 			knownBeans.add(bean);
 			ctr++;
 		}
-		
+
 		if(iter.hasNext()) {
 			// too many beans; let's give up on caching.
-			
-			// if knownBeans is a TreeSet: this is our worst-case scenario
-			// Here will keep consulting the TreeSet's comparator for every
-			// new bean, which may be expensive.
 			return new QueryIteratorDash(broker.getPersistenceKey(), knownBeans, iter);
 		}
-		
-		// we exhausted the QueryIterator, so we have all the beans we need to return.
-		
-		// ... but before we return let's cache everything for future lookups:
-		
-		if(cacheResults) {
-			List<String> knownBeanOids = new LinkedList<>();
-			for(X2BaseBean bean : knownBeans) {
-				knownBeanOids.add(bean.getOid());
-			}
-			cache.put(cacheKey, knownBeanOids);
+
+		beanOids = new LinkedList<>();
+		for(X2BaseBean bean : knownBeans) {
+			beanOids.add(bean.getOid());
 		}
+		cache.put(cacheKey, beanOids);
 		
-		if(!splitOperatorsToCache.isEmpty()) {
-			Map<Operator, List<String>> oidsByOperator = new HashMap<>();
-			scanOps : for(Operator op : splitOperatorsToCache) {
-				List<String> oids = oidsByOperator.get(op);
-				if(oids==null) {
-					oids = new LinkedList<>();
-					oidsByOperator.put(op, oids);
-				}
+		scanOps : for(Operator op : splitOperators) {
+			if(isCachingSplit(orderBy, profile, op, knownBeans)) {
+				List<String> oids = new LinkedList<>();
+		
 				for(X2BaseBean bean : knownBeans) {
 					try {
 						if(op.evaluate(BrokerDash.CONTEXT, bean)) {
 							oids.add(bean.getOid());
 						}
 					} catch(Exception e) {
-						AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluated \""+op+"\" on \""+bean+"\"", e);
-						// store a large value in here so we'll never try caching this particular Operator again
-						cache.put(new CacheKey(op, orderBy), new AtomicInteger(100));
-						oidsByOperator.remove(op);
+						AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluating \""+op+"\" on \""+bean+"\"", e);
 						continue scanOps;
 					}
 				}
-			}
-			
-			for(Entry<Operator, List<String>> entry : oidsByOperator.entrySet()) {
-				CacheKey splitKey = new CacheKey(entry.getKey(), orderBy);
-				cache.put(splitKey, entry.getValue());
+
+				CacheKey splitKey = new CacheKey(op, orderBy);
+				cache.put(splitKey, oids);
 			}
 		}
 
 		return new QueryIteratorDash(broker.getPersistenceKey(), knownBeans);
+	}
+
+	protected boolean isCachingSplit(OrderByComparator orderBy,
+			QueryProfile profile, Operator op, Collection<X2BaseBean> oidsToEvaluate) {
+		if(!orderBy.isSimple())
+			return false;
+		if(oidsToEvaluate.size()>100)
+			return false;
+		return true;
 	}
 
 	public void clearAll() {
@@ -316,5 +331,43 @@ public class BrokerDashSharedResource {
 			cachePool.clear();
 			cacheByBeanType.clear();
 		}
+	}
+	
+	protected boolean isCaching(OrderByComparator orderBy, QueryProfile profile) {
+		if(profile.getCounter()<10) {
+			// The Dash caching layer is supposed to help address
+			// frequent repetitive queries. Don't interfere with 
+			// rare queries. For large tasks there is usually a huge
+			// outermost query/loop (such as grabbing 10,000 students
+			// to iterate over). We want to let those big and rare
+			// queries slip by this caching model with no interference.
+			
+			return false;
+		}
+		
+		if(profile.getCounter() > 100 && profile.getAverageReturnCount() > MAX_OID_LIST_SIZE * 9 / 10) {
+			// If the odds are decent that we're going to get close to
+			// our limit: give up now without additional overhead.
+			
+			return false;
+		}
+		
+		return true;
+	}
+	
+	protected boolean isCachingSplit(OrderByComparator orderBy, QueryProfile profile) {
+		if(!orderBy.isSimple()) {
+			// When you call "myStudent.getPerson().getAddress()", that may
+			// involve two separate database queries. So if our order-by comparator
+			// involves fetching similar properties: that means we may be issuing
+			// lots of queries just to sort beans in the expected order.
+			// This defeats the purpose of our caching model: if we saved one
+			// BeanQuery but introduced N-many calls to BeanManager#retrieveReference
+			// then we may have just made performance (much) worse.
+			
+			return false;
+		}
+		
+		return true;
 	}
 }
