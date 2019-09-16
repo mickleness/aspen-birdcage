@@ -19,6 +19,11 @@ import com.pump.data.operator.Operator;
 import com.pump.data.operator.Or;
 import com.pump.text.WildcardPattern;
 
+/**
+ * This converts org.apache.ojb.broker.query.Criterias into 
+ * com.pump.data.operator.Operators (and back again).
+ *
+ */
 public class CriteriaToOperatorConverter {
 
 	static WildcardPattern.Format sqlFormat = new WildcardPattern.Format();
@@ -129,6 +134,7 @@ public class CriteriaToOperatorConverter {
 	 * This may throw an exception if this uses a criteria feature that is not
 	 * supported by Operators.
 	 */
+	@SuppressWarnings("rawtypes")
 	public static Operator createOperator(Criteria criteria) {
 		Enumeration e = criteria.getElements();
 		Operator current = null;

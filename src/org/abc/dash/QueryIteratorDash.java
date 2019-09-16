@@ -14,21 +14,45 @@ import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 
-class QueryIteratorDash extends QueryIterator {
+/**
+ * This iterates over a series of X2BaseBeans.
+ * <p>
+ * This may pull data from two sources: a predefined collection of
+ * beans and/or a QueryIterator.
+ */
+class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	
+	/**
+	 * This listener is notified when an iterator closes.
+	 */
 	static interface CloseListener {
+		/**
+		 * This method is invoked when an iterator closes.
+		 * 
+		 * @param returnCount the number of times this iterator produced results.
+		 * @param hasNext whether this iterator's {@link Iterator#hasNext()} method
+		 * indicated there were results remaining when this iterator was closed.
+		 */
 		public void closedIterator(int returnCount,boolean hasNext);
 	}
 	
-	Collection<X2BaseBean> beans;
-	QueryIterator queryIterator;
-	PersistenceKey persistenceKey;
-	List<CloseListener> closeListeners = new ArrayList<>();
+	/**
+	 * This is never null, although it may be empty.
+	 */
+	protected Collection<X2BaseBean> beans;
+	
+	/**
+	 * This may always be null, or it may become null on exhaustion.
+	 */
+	protected QueryIterator<X2BaseBean> queryIterator;
+	
+	protected PersistenceKey persistenceKey;
+	protected List<CloseListener> closeListeners = new ArrayList<>();
 	
 	/**
 	 * The number of successful invocations of {@link #next()}.
 	 */
-	int nextCounter = 0;
+	protected int nextCounter = 0;
 	
 	/**
 	 * Create an iterator that will walk through a collection of beans.
@@ -41,27 +65,34 @@ class QueryIteratorDash extends QueryIterator {
 	 * Create an iterator that will walk through a collection of beans and a QueryIterator.
 	 * <p>
 	 * Every time a new bean is requested: if possible we pull a bean from the QueryIterator
-	 * and add it to the collection of beans. Then we pull the first bean from the collection of beans.
+	 * and add it to the collection of beans. Then we return the first bean from the collection of beans.
 	 * <p>
-	 * Sometimes the collection of incoming beans is a LinkedList, so this approach will give a FIFO order.
-	 * Sometimes the collection of incoming beans is a TreeSet, so this approach will use the TreeSet's
-	 * Comparator to merge the results.
+	 * So if the collection is a List, this approach will generate a FIFO iterator.
+	 * If the collection is a SortedSet, then this approach will merge the QueryIterator
+	 * with the SortedSet. (This assumes the QueryIterator will return results using the
+	 * same order-by rules that the SortedSet follows.)
 	 * 
 	 * @param persistenceKey the PersistenceKey associated with this iterator
-	 * @param beans the optional collection of beans to walk through
-	 * @param queryIterator the optional QueryIterator to walk through
+	 * @param beans an optional collection of beans to walk through. This may be null.
+	 * @param queryIterator the optional QueryIterator to walk through. This may be null.
 	 */
-	public QueryIteratorDash(PersistenceKey persistenceKey, Collection<X2BaseBean> beans, QueryIterator queryIterator) {
+	public QueryIteratorDash(PersistenceKey persistenceKey, Collection<X2BaseBean> beans, QueryIterator<X2BaseBean> queryIterator) {
 		Objects.requireNonNull(persistenceKey);
 		this.beans = beans==null ? new LinkedList<X2BaseBean>() : beans;
 		this.queryIterator = queryIterator;
 		this.persistenceKey = persistenceKey;
 	}
 	
+	/**
+	 * Add a CloseListener that will be notified when this iterator is closed.
+	 */
 	public void addCloseListener(CloseListener l) {
 		closeListeners.add(l);
 	}
 	
+	/**
+	 * Remove a CloseListener.
+	 */
 	public void removeCloseListener(CloseListener l) {
 		closeListeners.remove(l);
 	}
@@ -73,7 +104,6 @@ class QueryIteratorDash extends QueryIterator {
 
 	@Override
 	public void close() {
-		
 		boolean hasNext = hasNext();
 		
 		if(queryIterator!=null)
@@ -86,22 +116,31 @@ class QueryIteratorDash extends QueryIterator {
 		}
 	}
 
+	@SuppressWarnings("rawtypes")
 	@Override
 	protected Iterator getIterator(PersistenceBroker arg0, Query arg1) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public Object next() {
+	public X2BaseBean next() {
 		if(queryIterator!=null) {
 			if(queryIterator.hasNext()) {
-				X2BaseBean bean = (X2BaseBean) queryIterator.next();
+				X2BaseBean bean = queryIterator.next();
 				beans.add(bean);
 			}
-			if(!queryIterator.hasNext())
+			if(!queryIterator.hasNext()) {
+				queryIterator.close();
 				queryIterator = null;
+			}
 		}
-		X2BaseBean returnValue = beans.iterator().next();
+		
+		if(beans.size()==0)
+			return null;
+		
+		Iterator<X2BaseBean> beanIter = beans.iterator();
+		X2BaseBean returnValue = beanIter.next();
+		beanIter.remove();
 		nextCounter++;
 		return returnValue;
 	}

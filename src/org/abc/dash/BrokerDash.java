@@ -8,7 +8,6 @@ import org.apache.commons.beanutils.PropertyUtils;
 
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.pump.data.operator.OperatorContext;
-import com.pump.util.Cache.CachePool;
 import com.x2dev.utils.StringUtils;
 
 /**

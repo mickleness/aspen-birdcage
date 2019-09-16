@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Level;
 
+import org.abc.dash.BrokerDashSharedResource.CacheKey;
 import org.apache.ojb.broker.query.Query;
 
 import com.follett.fsc.core.framework.persistence.BeanQuery;
@@ -155,7 +156,7 @@ public class BrokerDashFactory {
 			if (method_getIteratorByQuery.equals(method)
 					&& args[0] instanceof BeanQuery) {
 				BeanQuery beanQuery = (BeanQuery) args[0];
-				QueryIterator returnValue = sharedResource.createCachedIterator(broker, beanQuery);
+				QueryIterator returnValue = sharedResource.createDashIterator(broker, beanQuery);
 				return returnValue;
 			} else if (method_getBeanByQuery.equals(method)
 					&& args[0] instanceof BeanQuery) {
@@ -312,6 +313,7 @@ public class BrokerDashFactory {
 		return createBrokerDash(broker);
 	}
 
+	@SuppressWarnings("rawtypes")
 	private BrokerDash createBrokerDash(X2Broker broker) {
 		InvocationHandler handler = new DashInvocationHandler(broker, sharedResource);
 
