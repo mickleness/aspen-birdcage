@@ -86,4 +86,12 @@ public class TemplateQueryProfile implements QueryIteratorDash.CloseListener, Se
 		out.writeDouble(averageReturnCount);
 		out.writeObject(results);
 	}
+
+	@Override
+	public String toString() {
+		return "TemplateQueryProfile[ ctr="+getCounter()+
+				", averageReturnCount="+getAverageReturnCount()+
+				", maxReturnCount="+getMaxReturnCount()+
+				", results="+getResults()+"]";
+	}
 }
