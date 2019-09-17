@@ -59,7 +59,7 @@ public class BasicEntry<K, V> implements Map.Entry<K, V>, Serializable, Cloneabl
 	}
 
 	@Override
-	protected BasicEntry<K, V> clone() throws CloneNotSupportedException {
+	protected BasicEntry<K, V> clone() {
 		return new BasicEntry<K, V>(getKey(), getValue());
 	}
 

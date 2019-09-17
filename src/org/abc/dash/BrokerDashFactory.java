@@ -296,7 +296,10 @@ public class BrokerDashFactory {
 		this.sharedResource = sharedResource;
 	}
 	
-
+	public BrokerDashSharedResource getSharedResource() {
+		return sharedResource;
+	}
+	
 	/**
 	 * Create a BrokerDash that uses this factory's CachePool.
 	 * <p>
