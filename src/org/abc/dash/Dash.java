@@ -2,6 +2,7 @@ package org.abc.dash;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.lang.Thread.UncaughtExceptionHandler;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -14,9 +15,9 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.TreeSet;
-import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 
@@ -31,15 +32,16 @@ import org.apache.ojb.broker.query.BetweenCriteria;
 import org.apache.ojb.broker.query.Criteria;
 import org.apache.ojb.broker.query.LikeCriteria;
 import org.apache.ojb.broker.query.Query;
+import org.apache.ojb.broker.query.QueryByCriteria;
 import org.apache.ojb.broker.query.ValueCriteria;
 
 import com.follett.fsc.core.framework.persistence.BeanQuery;
 import com.follett.fsc.core.framework.persistence.InsertQuery;
 import com.follett.fsc.core.framework.persistence.UpdateQuery;
 import com.follett.fsc.core.framework.persistence.X2ObjectCache;
+import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
-import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.path.BeanTablePath;
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.tools.procedures.ProcedureJavaSource;
@@ -140,7 +142,7 @@ public class Dash extends ProcedureJavaSource {
 							parser.attributeName);
 				} catch (IllegalAccessException | InvocationTargetException
 						| NoSuchMethodException e) {
-					throw new RuntimeException("An error occurred retrieved \""
+					throw new RuntimeException("An error occurred retrieving \""
 							+ attributeName + "\" from " + dataSource, e);
 				}
 				Iterator<Function> iter = parser.functions.descendingIterator();
@@ -167,6 +169,7 @@ public class Dash extends ProcedureJavaSource {
 	public static class BrokerDashFactory {
 
 		static class DashInvocationHandler implements InvocationHandler {
+			static RuntimeException constructionException;
 			static Method method_getIteratorByQuery;
 			static Method method_getBeanByQuery;
 			static Method method_getSharedResource;
@@ -228,11 +231,7 @@ public class Dash extends ProcedureJavaSource {
 							new int[0].getClass());
 					initialized = true;
 				} catch (Exception e) {
-					AppGlobals
-							.getLog()
-							.log(Level.SEVERE,
-									"An error occurred initializing the Dash cache architecture, so it is being deactivated.",
-									e);
+					constructionException = new RuntimeException("An error occurred initializing the Dash cache architecture, so it is being deactivated.", e);
 				}
 			}
 
@@ -242,6 +241,8 @@ public class Dash extends ProcedureJavaSource {
 
 			DashInvocationHandler(X2Broker broker,
 					BrokerDashSharedResource sharedResource) {
+				if(constructionException!=null)
+					throw constructionException;
 				Objects.requireNonNull(broker);
 				Objects.requireNonNull(sharedResource);
 				this.broker = broker;
@@ -249,11 +250,11 @@ public class Dash extends ProcedureJavaSource {
 			}
 
 			protected void handleException(Exception e) {
-				AppGlobals
-						.getLog()
-						.log(Level.SEVERE,
-								"An error occurred using the Dash cache architecture, so it is being deactivated.",
-								e);
+				Exception e2 = new Exception("An error occurred using the Dash cache architecture, so it is being deactivated.", e);
+				UncaughtExceptionHandler ueh = sharedResource.getUncaughtExceptionHandler();
+				if(ueh!=null) {
+					ueh.uncaughtException(Thread.currentThread(), e2);
+				}
 				active = false;
 			}
 
@@ -287,12 +288,12 @@ public class Dash extends ProcedureJavaSource {
 			protected Object invokeCached(Object proxy, Method method, Object[] args)
 					throws Throwable {
 				if (method_getIteratorByQuery.equals(method)
-						&& args[0] instanceof BeanQuery) {
-					BeanQuery beanQuery = (BeanQuery) args[0];
-					QueryIterator returnValue = sharedResource.createDashIterator(broker, beanQuery);
+						&& isBeanQuery(args[0])) {
+					QueryByCriteria query = (QueryByCriteria) args[0];
+					QueryIterator returnValue = sharedResource.createDashIterator(broker, query);
 					return returnValue;
 				} else if (method_getBeanByQuery.equals(method)
-						&& args[0] instanceof BeanQuery) {
+						&& isBeanQuery(args[0])) {
 					// pass through getIteratorByQuery to benefit from our caching
 					try (QueryIterator queryIter = (QueryIterator) invoke(proxy,
 							method_getIteratorByQuery, args)) {
@@ -301,7 +302,7 @@ public class Dash extends ProcedureJavaSource {
 						return null;
 					}
 				} else if (method_getCollectionByQuery.equals(method)
-						&& args[0] instanceof BeanQuery) {
+						&& isBeanQuery(args[0])) {
 					// pass through getIteratorByQuery to benefit from our caching
 					try (QueryIterator queryIter = (QueryIterator) invoke(proxy,
 							method_getIteratorByQuery, args)) {
@@ -313,26 +314,26 @@ public class Dash extends ProcedureJavaSource {
 						return result;
 					}
 				} else if (method_getGroupedCollectionByQuery1.equals(method)
-						&& args[0] instanceof BeanQuery) {
+						&& isBeanQuery(args[0])) {
 					Object[] newArgs = new Object[] { args[0],
 							new String[] { (String) args[1] },
 							new int[] { ((Integer) args[2]).intValue() } };
 					return invoke(proxy, method_getGroupedCollectionByQuery2,
 							newArgs);
 				} else if (method_getGroupedCollectionByQuery2.equals(method)
-						&& args[0] instanceof BeanQuery) {
-					BeanQuery query = (BeanQuery) args[0];
+						&& isBeanQuery(args[0])) {
+					QueryByCriteria query = (QueryByCriteria) args[0];
 					String[] columns = (String[]) args[1];
 					int[] mapSizes = (int[]) args[2];
 					return createNestedMap(proxy, query, columns, mapSizes, true);
 				} else if (method_getMapByQuery.equals(method)
-						&& args[0] instanceof BeanQuery) {
+						&& isBeanQuery(args[0]) ) {
 					Object[] newArgs = new Object[] { args[0],
 							new String[] { (String) args[1] },
 							new int[] { ((Integer) args[2]).intValue() } };
 					return invoke(proxy, method_getNestedMapByQuery2, newArgs);
 				} else if (method_getNestedMapByQuery1.equals(method)
-						&& args[0] instanceof BeanQuery) {
+						&& isBeanQuery(args[0])) {
 					Object[] newArgs = new Object[] {
 							args[0],
 							new String[] { (String) args[1], (String) args[2] },
@@ -340,8 +341,8 @@ public class Dash extends ProcedureJavaSource {
 									((Integer) args[4]).intValue() } };
 					return invoke(proxy, method_getNestedMapByQuery2, newArgs);
 				} else if (method_getNestedMapByQuery2.equals(method)
-						&& args[0] instanceof BeanQuery) {
-					BeanQuery query = (BeanQuery) args[0];
+						&& isBeanQuery(args[0]) ) {
+					QueryByCriteria query = (QueryByCriteria) args[0];
 					String[] columns = (String[]) args[1];
 					int[] mapSizes = (int[]) args[2];
 					return createNestedMap(proxy, query, columns, mapSizes, false);
@@ -353,34 +354,27 @@ public class Dash extends ProcedureJavaSource {
 						.startsWith("saveBean")) && args[0] instanceof X2BaseBean) {
 					X2BaseBean bean = (X2BaseBean) args[0];
 					Class t = bean.getClass();
-					Cache<CacheKey, List<String>> cache = sharedResource.getCache(t, false);
-					if (cache != null)
-						cache.clear();
+					sharedResource.clearCache(t);
 				} else if (method_deleteBeanByOid.equals(method)) {
 					Class beanType = (Class) args[0];
-					Cache<CacheKey, List<String>> cache = sharedResource.getCache(beanType, false);
-					if (cache != null)
-						cache.clear();
+					sharedResource.clearCache(beanType);
 				} else if (method_deleteByQuery.equals(method)
 						|| method_executeUpdateQuery.equals(method)
 						|| method_executeInsertQuery.equals(method)) {
 					Query query = (Query) args[0];
-					Cache<CacheKey, List<String>> cache = sharedResource.getCache(query
-							.getBaseClass(), false);
-					if (cache != null)
-						cache.clear();
+					sharedResource.clearCache(query.getBaseClass());
 				}
 
 				return method.invoke(broker, args);
 			}
 
 			@SuppressWarnings({ "rawtypes", "unchecked" })
-			private Object createNestedMap(Object proxy, BeanQuery query,
+			private Object createNestedMap(Object proxy, QueryByCriteria beanQuery,
 					String[] columns, int[] mapSizes, boolean useLists)
 					throws Throwable {
 				// pass through getIteratorByQuery to benefit from our caching
 				try (QueryIterator queryIter = (QueryIterator) invoke(proxy,
-						method_getIteratorByQuery, new Object[] { query })) {
+						method_getIteratorByQuery, new Object[] { beanQuery })) {
 
 					Map map = new HashMap(mapSizes[0]);
 					while (queryIter.hasNext()) {
@@ -474,7 +468,7 @@ public class Dash extends ProcedureJavaSource {
 		private static final long serialVersionUID = 1L;
 
 		/**
-		 * This describes an attempt to uncache a BeanQuery.
+		 * This describes an attempt to uncache a bean query.
 		 */
 		public enum Type {
 			/**
@@ -504,7 +498,12 @@ public class Dash extends ProcedureJavaSource {
 			/**
 			 * This indicates our cache layer was able to resolve the query by splitting it and resolving its split elements.
 			 */
-			HIT_FROM_SPLIT;
+			HIT_FROM_SPLIT,
+			/**
+			 * This indicates caching wasn't attempted because a Criteria couldn't be converted to an Operator.
+			 * (This is probably because a criteria contained a subquery, or some other unsupported feature).
+			 */
+			SKIP_UNSUPPORTED;
 		}
 		
 		protected Map<Type, AtomicLong> matches = new HashMap<>();
@@ -1052,7 +1051,7 @@ public class Dash extends ProcedureJavaSource {
 	/**
 	 * This maintains caches of oids for specific queries.
 	 * <p>
-	 * The method {@link #createDashIterator(X2Broker, BeanQuery)} consults and updates
+	 * The method {@link #createDashIterator(X2Broker, QueryByCriteria)} consults and updates
 	 * these caches and may return an iterator that doesn't consult the database at all
 	 * or that consults the database for a subset of the original query.
 	 * <p>
@@ -1162,7 +1161,7 @@ public class Dash extends ProcedureJavaSource {
 		}
 
 		/**
-		 * Create a QueryIteratorDash for a BeanQuery.
+		 * Create a QueryIteratorDash for a QueryByCriteria.
 		 * <p>
 		 * In an ideal case: this will use cached data to completely avoid making a
 		 * database query.
@@ -1177,9 +1176,21 @@ public class Dash extends ProcedureJavaSource {
 		 * split the original query into smaller pieces, and some of those pieces we could uncache
 		 * and others we could not.</li></ul>
 		 */
-		public final QueryIteratorDash createDashIterator(X2Broker broker,BeanQuery beanQuery) {
-			Operator operator = CriteriaToOperatorConverter
+		public final QueryIteratorDash createDashIterator(X2Broker broker,QueryByCriteria beanQuery) {
+			if(!isBeanQuery(beanQuery))
+				throw new IllegalArgumentException("This query is not for an X2BaseBean: "+beanQuery);
+			Operator operator;
+			try {
+				operator = CriteriaToOperatorConverter
 					.createOperator(beanQuery.getCriteria());
+			} catch(Exception e) {
+				//this Criteria can't be converted to an Operator, so we should give up:
+
+				QueryIterator iter = broker.getIteratorByQuery(beanQuery);
+				QueryIteratorDash dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
+				cacheResults.increment(CacheResults.Type.SKIP_UNSUPPORTED);
+				return dashIter;
+			}
 			
 			Operator template = operator.getTemplateOperator();
 			ProfileKey profileKey = new ProfileKey(template, beanQuery.getBaseClass());
@@ -1213,7 +1224,7 @@ public class Dash extends ProcedureJavaSource {
 		 * @return the iterator and the way to classify this request in CacheResults objects.
 		 */
 		@SuppressWarnings({ "rawtypes", "unchecked" })
-		protected Map.Entry<QueryIteratorDash,CacheResults.Type> doCreateDashIterator(X2Broker broker, BeanQuery beanQuery, Operator operator, TemplateQueryProfile profile) {
+		protected Map.Entry<QueryIteratorDash,CacheResults.Type> doCreateDashIterator(X2Broker broker, QueryByCriteria beanQuery, Operator operator, TemplateQueryProfile profile) {
 			OrderByComparator orderBy = new OrderByComparator(false,
 					beanQuery.getOrderBy());
 			
@@ -1224,7 +1235,7 @@ public class Dash extends ProcedureJavaSource {
 			}
 			
 			Cache<CacheKey, List<String>> cache = getCache(beanQuery.getBaseClass(), true);
-			CacheKey cacheKey = new CacheKey(operator, orderBy);
+			CacheKey cacheKey = new CacheKey(operator, orderBy, beanQuery.isDistinct());
 			List<String> beanOids = cache.get(cacheKey);
 			
 			if (beanOids != null) {
@@ -1240,7 +1251,7 @@ public class Dash extends ProcedureJavaSource {
 				
 				Criteria oidCriteria = new Criteria();
 				oidCriteria.addIn(X2BaseBean.COL_OID, beanOids);
-				beanQuery = new BeanQuery(beanQuery.getBaseClass(), oidCriteria);
+				beanQuery = cloneBeanQuery(beanQuery, oidCriteria);
 				for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
 					beanQuery.addOrderBy(fieldHelper);
 				}
@@ -1303,7 +1314,7 @@ public class Dash extends ProcedureJavaSource {
 			boolean removedOneOrMoreOperators = false;
 			while(splitIter.hasNext()) {
 				Operator splitOperator = splitIter.next();
-				CacheKey splitKey = new CacheKey(splitOperator, orderBy);
+				CacheKey splitKey = new CacheKey(splitOperator, orderBy, beanQuery.isDistinct());
 				
 				List<String> splitOids = cache.get(splitKey);
 				if(splitOids!=null) {
@@ -1336,7 +1347,7 @@ public class Dash extends ProcedureJavaSource {
 				Criteria trimmedCriteria = CriteriaToOperatorConverter.createCriteria(trimmedOperator);
 				
 				// ... so we're going to make a new (narrower) query, and merge its results with knownBeans
-				beanQuery = new BeanQuery(beanQuery.getBaseClass(), trimmedCriteria);
+				beanQuery = cloneBeanQuery(beanQuery, trimmedCriteria);
 				for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
 					beanQuery.addOrderBy(fieldHelper);
 				}
@@ -1385,12 +1396,14 @@ public class Dash extends ProcedureJavaSource {
 								oids.add(bean.getOid());
 							}
 						} catch(Exception e) {
-							AppGlobals.getLog().log(Level.SEVERE, "An error occurred evaluating \""+op+"\" on \""+bean+"\"", e);
+							UncaughtExceptionHandler ueh = getUncaughtExceptionHandler();
+							Exception e2 = new Exception("An error occurred evaluating \""+op+"\" on \""+bean+"\"", e);
+							ueh.uncaughtException(Thread.currentThread(), e2);
 							continue scanOps;
 						}
 					}
 
-					CacheKey splitKey = new CacheKey(op, orderBy);
+					CacheKey splitKey = new CacheKey(op, orderBy, beanQuery.isDistinct());
 					cache.put(splitKey, oids);
 				}
 			}
@@ -1401,6 +1414,20 @@ public class Dash extends ProcedureJavaSource {
 			} else {
 				return new BasicEntry<>(dashIter, CacheResults.Type.MISS);
 			}
+		}
+		
+		private QueryByCriteria cloneBeanQuery(QueryByCriteria query,Criteria newCriteria) {
+			QueryByCriteria returnValue;
+			if(query instanceof BeanQuery) {
+				BeanQuery b1 = (BeanQuery) query;
+				BeanQuery b2 = b1.copy(true);
+				b2.setCriteria(newCriteria);
+				returnValue = b2;
+			} else {
+				returnValue = new QueryByCriteria(query.getBaseClass(), newCriteria);
+			}
+			
+			return returnValue;
 		}
 
 		/**
@@ -1426,10 +1453,20 @@ public class Dash extends ProcedureJavaSource {
 			}
 		}
 		
+		public int clearCache(Class beanType) {
+			Cache<CacheKey, List<String>> cache = getCache(beanType, false);
+			if (cache != null) {
+				int size = cache.size();
+				cache.clear();
+				return size;
+			}
+			return 0;
+		}
+		
 		/**
 		 * Return true if we should consult/update the cache for a given query.
 		 */
-		protected boolean isCaching(OrderByComparator orderBy, TemplateQueryProfile profile, BeanQuery beanQuery) {
+		protected boolean isCaching(OrderByComparator orderBy, TemplateQueryProfile profile, QueryByCriteria beanQuery) {
 			if(profile.getCounter()<10) {
 				// The Dash caching layer is supposed to help address
 				// frequent repetitive queries. Don't interfere with 
@@ -1454,7 +1491,7 @@ public class Dash extends ProcedureJavaSource {
 		/**
 		 * Return the maximum number of oids we'll cache.
 		 */
-		protected int getMaxOidListSize(boolean involvedSplit,BeanQuery beanQuery) {
+		protected int getMaxOidListSize(boolean involvedSplit,QueryByCriteria beanQuery) {
 			return 500;
 		}
 		
@@ -1468,13 +1505,38 @@ public class Dash extends ProcedureJavaSource {
 				// involves fetching these properties: that means we may be issuing
 				// lots of queries just to sort beans in the expected order.
 				// This defeats the purpose of our caching model: if we saved one
-				// BeanQuery but introduced N-many calls to BeanManager#retrieveReference
+				// query but introduced N-many calls to BeanManager#retrieveReference
 				// then we may have just made performance (much) worse.
 				
 				return false;
 			}
 			
 			return true;
+		}
+
+		private ThreadLocal<UncaughtExceptionHandler> uncaughtExceptionHandlers = new ThreadLocal<>();
+		static UncaughtExceptionHandler DEFAULT_UNCAUGHT_EXCEPTION_HANDLER = new UncaughtExceptionHandler() {
+
+			@Override
+			public void uncaughtException(Thread t, Throwable e) {
+				AppGlobals.getLog().log(Level.SEVERE, "", e);
+			}
+			
+		};
+		
+		public UncaughtExceptionHandler getUncaughtExceptionHandler() {
+			UncaughtExceptionHandler ueh = uncaughtExceptionHandlers.get();
+			if(ueh==null)
+				ueh = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
+			return ueh;
+		}
+		
+		public void setUncaughtExceptionHandler(UncaughtExceptionHandler ueh) {
+			if(ueh==null) {
+				uncaughtExceptionHandlers.remove();
+			} else {
+				uncaughtExceptionHandlers.set(ueh);
+			}
 		}
 	}
 	
@@ -1497,9 +1559,35 @@ public class Dash extends ProcedureJavaSource {
 	public static class CacheKey extends BasicEntry<Operator, OrderByComparator> {
 		private static final long serialVersionUID = 1L;
 		
-		CacheKey(Operator operator,OrderByComparator orderBy) {
+		boolean isDistinct;
+		
+		CacheKey(Operator operator,OrderByComparator orderBy, boolean isDistinct) {
 			super(operator, orderBy);
+			this.isDistinct = isDistinct;
 		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if(!super.equals(obj))
+				return false;
+			CacheKey other = (CacheKey) obj;
+			if(isDistinct!=other.isDistinct)
+				return false;
+			return true;
+		}
+
+		@Override
+		public String toString() {
+			return "CacheKey[ \""+getKey()+"\", "+getValue()+(isDistinct ? ", distinct" : "")+"]";
+		}
+	}
+
+	public static boolean isBeanQuery(Object object) {
+		if(!(object instanceof QueryByCriteria))
+			return false;
+		QueryByCriteria qbc = (QueryByCriteria) object;
+		Class baseClass = qbc.getBaseClass();
+		return X2BaseBean.class.isAssignableFrom(baseClass);
 	}
 	
 	@Override
