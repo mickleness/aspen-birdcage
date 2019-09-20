@@ -187,6 +187,7 @@ public class Dash extends ProcedureJavaSource {
 			static Method method_getMapByQuery;
 			static Method method_getNestedMapByQuery1;
 			static Method method_getNestedMapByQuery2;
+			static Method method_getBeanByOid;
 			static boolean initialized = false;
 
 			static {
@@ -229,6 +230,7 @@ public class Dash extends ProcedureJavaSource {
 					method_getNestedMapByQuery2 = X2Broker.class.getMethod(
 							"getNestedMapByQuery", Query.class, String[].class,
 							new int[0].getClass());
+					method_getBeanByOid = X2Broker.class.getMethod("getBeanByOid", Class.class, String.class);
 					initialized = true;
 				} catch (Exception e) {
 					constructionException = new RuntimeException("An error occurred initializing the Dash cache architecture, so it is being deactivated.", e);
@@ -287,7 +289,13 @@ public class Dash extends ProcedureJavaSource {
 			@SuppressWarnings({ "rawtypes" })
 			protected Object invokeCached(Object proxy, Method method, Object[] args)
 					throws Throwable {
-				if (method_getIteratorByQuery.equals(method)
+				if(method_getBeanByOid.equals(method)) {
+					// we don't benefit from intercepting this method, but it is helpful in debugging logs
+					// to confirm which methods we're able to absorb without consulting the parent broker
+					X2BaseBean bean = getBeanFromGlobalCache(broker.getPersistenceKey(), (Class) args[0], (String) args[1]);
+					if(bean!=null)
+						return bean;
+				} else if (method_getIteratorByQuery.equals(method)
 						&& isBeanQuery(args[0])) {
 					QueryByCriteria query = (QueryByCriteria) args[0];
 					QueryIterator returnValue = sharedResource.createDashIterator(broker, query);
@@ -1063,59 +1071,6 @@ public class Dash extends ProcedureJavaSource {
 	 */
 	public static class BrokerDashSharedResource {
 		
-		/**
-		 * Return a bean from the global cache, or return null if the bean does not
-		 * exist in the cache.
-		 * 
-		 * @param persistenceKey
-		 *            the key identifying the database/client.
-		 * @param beanClass
-		 *            the type of bean to return. This is highly recommended for
-		 *            efficiency's sake, but if this is left null it will be derived
-		 *            from the bean oid.
-		 * @param beanOid
-		 *            the oid of the bean to return.
-		 * @return
-		 */
-		@SuppressWarnings("rawtypes")
-		public static X2BaseBean getBeanFromGlobalCache(
-				PersistenceKey persistenceKey, Class<?> beanClass, String beanOid) {
-			Objects.requireNonNull(persistenceKey);
-			Objects.requireNonNull(beanOid);
-
-			X2ObjectCache x2cache = AppGlobals.getCache(persistenceKey);
-
-			if (beanClass == null) {
-				String prefix = beanOid.substring(0, Math.min(3, beanOid.length()));
-				BeanTablePath btp = BeanTablePath.getTableByName(prefix
-						.toUpperCase());
-				if (btp == null)
-					throw new IllegalArgumentException(
-							"Could not determine bean class for \"" + beanOid
-									+ "\".");
-				beanClass = btp.getBeanType();
-			}
-
-			Identity identity = new Identity(beanClass, beanClass,
-					new Object[] { beanOid });
-			X2BaseBean bean = (X2BaseBean) x2cache.lookup(identity);
-			return bean;
-		}
-
-		/**
-		 * Return all the beans in a list of bean oids, or null if those beans were not readily available in the global cache.
-		 */
-		public static List<X2BaseBean> getBeansFromGlobalCache(PersistenceKey persistenceKey,Class<?> beanType,List<String> beanOids) {
-			List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
-			for(String beanOid : beanOids) {
-				X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanType, beanOid);
-				if(bean==null)
-					return null;
-				beans.add(bean);
-			}
-			return beans;
-		}
-		
 		protected CachePool cachePool;
 		protected Cache<ProfileKey, TemplateQueryProfile> profiles;
 		protected CacheResults cacheResults = new CacheResults();
@@ -1252,9 +1207,6 @@ public class Dash extends ProcedureJavaSource {
 				Criteria oidCriteria = new Criteria();
 				oidCriteria.addIn(X2BaseBean.COL_OID, beanOids);
 				beanQuery = cloneBeanQuery(beanQuery, oidCriteria);
-				for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
-					beanQuery.addOrderBy(fieldHelper);
-				}
 
 				QueryIterator iter = broker.getIteratorByQuery(beanQuery);
 				QueryIteratorDash dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
@@ -1348,9 +1300,6 @@ public class Dash extends ProcedureJavaSource {
 				
 				// ... so we're going to make a new (narrower) query, and merge its results with knownBeans
 				beanQuery = cloneBeanQuery(beanQuery, trimmedCriteria);
-				for(FieldHelper fieldHelper : orderBy.getFieldHelpers()) {
-					beanQuery.addOrderBy(fieldHelper);
-				}
 			}
 			
 			if(knownBeans.isEmpty()) {
@@ -1425,6 +1374,10 @@ public class Dash extends ProcedureJavaSource {
 				returnValue = b2;
 			} else {
 				returnValue = new QueryByCriteria(query.getBaseClass(), newCriteria);
+				for(Object orderBy : query.getOrderBy()) {
+					FieldHelper fieldHelper = (FieldHelper) orderBy;
+					returnValue.addOrderBy(fieldHelper);
+				}
 			}
 			
 			return returnValue;
@@ -1580,6 +1533,59 @@ public class Dash extends ProcedureJavaSource {
 		public String toString() {
 			return "CacheKey[ \""+getKey()+"\", "+getValue()+(isDistinct ? ", distinct" : "")+"]";
 		}
+	}
+	
+	/**
+	 * Return a bean from the global cache, or return null if the bean does not
+	 * exist in the cache.
+	 * 
+	 * @param persistenceKey
+	 *            the key identifying the database/client.
+	 * @param beanClass
+	 *            the type of bean to return. This is highly recommended for
+	 *            efficiency's sake, but if this is left null it will be derived
+	 *            from the bean oid.
+	 * @param beanOid
+	 *            the oid of the bean to return.
+	 * @return
+	 */
+	@SuppressWarnings("rawtypes")
+	public static X2BaseBean getBeanFromGlobalCache(
+			PersistenceKey persistenceKey, Class<?> beanClass, String beanOid) {
+		Objects.requireNonNull(persistenceKey);
+		Objects.requireNonNull(beanOid);
+
+		X2ObjectCache x2cache = AppGlobals.getCache(persistenceKey);
+
+		if (beanClass == null) {
+			String prefix = beanOid.substring(0, Math.min(3, beanOid.length()));
+			BeanTablePath btp = BeanTablePath.getTableByName(prefix
+					.toUpperCase());
+			if (btp == null)
+				throw new IllegalArgumentException(
+						"Could not determine bean class for \"" + beanOid
+								+ "\".");
+			beanClass = btp.getBeanType();
+		}
+
+		Identity identity = new Identity(beanClass, beanClass,
+				new Object[] { beanOid });
+		X2BaseBean bean = (X2BaseBean) x2cache.lookup(identity);
+		return bean;
+	}
+
+	/**
+	 * Return all the beans in a list of bean oids, or null if those beans were not readily available in the global cache.
+	 */
+	public static List<X2BaseBean> getBeansFromGlobalCache(PersistenceKey persistenceKey,Class<?> beanType,List<String> beanOids) {
+		List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
+		for(String beanOid : beanOids) {
+			X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanType, beanOid);
+			if(bean==null)
+				return null;
+			beans.add(bean);
+		}
+		return beans;
 	}
 
 	public static boolean isBeanQuery(Object object) {
