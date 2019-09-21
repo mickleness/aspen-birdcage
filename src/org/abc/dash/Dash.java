@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.abc.tools.Tool;
 import org.abc.util.BasicEntry;
@@ -56,9 +57,7 @@ import com.x2dev.utils.StringUtils;
  * the same cache.
  */
 @Tool(name = "Dash Caching Model", id = "DASH-CACHE", type="Procedure")
-public class Dash implements Serializable {
-	
-	private static final long serialVersionUID = 1L;
+public class Dash {
 
 	/**
 	 * This is an OperatorContext that connects Operators to X2BaseBeans.
@@ -474,6 +473,11 @@ public class Dash implements Serializable {
 			this.orderBy = orderBy;
 		}
 		
+		@Override
+		public String toString() {
+			return "QueryRequest[ query="+beanQuery+", operator="+operator+", profile="+profile+", orderBy="+orderBy+"]";
+		}
+		
 	}
 	
 	protected CachePool cachePool;
@@ -547,7 +551,10 @@ public class Dash implements Serializable {
 	 */
 	@SuppressWarnings({ "rawtypes" })
 	public QueryIterator createQueryIterator(X2Broker broker,QueryByCriteria beanQuery) {
+		Logger log = getLog();
 		if(!isBeanQuery(beanQuery)) {
+			if(log.isLoggable(Level.INFO))
+				log.info("skipping for non-bean-query: "+beanQuery);
 			// the DashInvocationHandler won't even call this method if isBeanQuery(..)==false
 			cacheResults.increment(CacheResults.Type.SKIP_UNSUPPORTED);
 			return broker.getIteratorByQuery(beanQuery);
@@ -566,6 +573,9 @@ public class Dash implements Serializable {
 		Operator template = operator.getTemplateOperator();
 		ProfileKey profileKey = new ProfileKey(template, beanQuery.getBaseClass());
 
+		if(log.isLoggable(Level.INFO))
+			log.info("template: "+template);
+		
 		TemplateQueryProfile profile;
 		synchronized(profiles) {
 			profile = profiles.get(profileKey);
@@ -574,6 +584,8 @@ public class Dash implements Serializable {
 				profiles.put(profileKey, profile);
 			}
 		}
+		if(log.isLoggable(Level.INFO))
+			log.info("profile: "+profile);
 		
 		OrderByComparator orderBy = new OrderByComparator(false,
 				beanQuery.getOrderBy());
@@ -581,9 +593,27 @@ public class Dash implements Serializable {
 		QueryRequest request = new QueryRequest(beanQuery, operator, profile, orderBy);
 		
 		Map.Entry<QueryIterator,CacheResults.Type> results = doCreateQueryIterator(broker, request);
+		if(log.isLoggable(Level.INFO))
+			log.info("produced "+results);
+		
 		QueryIteratorDash dashIter = results.getKey() instanceof QueryIteratorDash ? (QueryIteratorDash) results.getKey() : null;
-		if(dashIter!=null)
+		if(dashIter!=null) {
 			dashIter.addCloseListener(profile);
+			dashIter.addCloseListener(new QueryIteratorDash.CloseListener() {
+
+				@Override
+				public void closedIterator(int returnCount, boolean hasNext) {
+					Logger log = getLog();
+					if(log.isLoggable(Level.INFO))
+						log.info("closed iterator after "+returnCount+" iterations, hasNext = "+(hasNext));
+				}
+				
+			});
+		} else {
+			// if it's not a QueryIteratorDash then our profile/counting mechanism breaks
+			if(log.isLoggable(Level.WARNING))
+				log.info("produced a QueryIterator that is not a QueryIteratorDash: "+results.getKey().getClass().getName());
+		}
 		profile.getResults().increment(results.getValue());
 		cacheResults.increment(results.getValue());
 		return results.getKey();
@@ -605,10 +635,13 @@ public class Dash implements Serializable {
 	 */
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	protected Map.Entry<QueryIterator,CacheResults.Type> doCreateQueryIterator(X2Broker broker, QueryRequest request) {
+		Logger log = getLog();
 		if(!isCaching(request)) {
 			QueryIterator iter = broker.getIteratorByQuery(request.beanQuery);
-			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
-			return new BasicEntry<>(dashIter, CacheResults.Type.SKIP);
+			if(log.isLoggable(Level.INFO))
+				log.info("aborting to default broker");
+			iter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
+			return new BasicEntry<>(iter, CacheResults.Type.SKIP);
 		}
 		
 		Cache<CacheKey, List<String>> cache = getCache(request.beanQuery.getBaseClass(), true);
@@ -620,6 +653,8 @@ public class Dash implements Serializable {
 			if(beans!=null) {
 				// This is our ideal case: we know the complete query results
 				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), beans);
+				if(log.isLoggable(Level.INFO))
+					log.info("found "+beans.size()+" beans for "+request);
 				return new BasicEntry<>(dashIter, CacheResults.Type.HIT);
 			}
 			
@@ -632,6 +667,10 @@ public class Dash implements Serializable {
 
 			QueryIterator iter = broker.getIteratorByQuery(newQuery);
 			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
+
+			if(log.isLoggable(Level.INFO))
+				log.info("found "+beanOids.size()+" bean oids for "+request);
+			
 			return new BasicEntry<>(dashIter, CacheResults.Type.REDUCED_QUERY_TO_OIDS);
 		}
 		
@@ -666,6 +705,8 @@ public class Dash implements Serializable {
 					}
 				}
 				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), returnValue);
+				if(log.isLoggable(Level.INFO))
+					log.info("filtered "+returnValue.size()+" bean oids for "+request);
 				return new BasicEntry<>(dashIter, CacheResults.Type.HIT_FROM_OID);
 			}
 		}
@@ -685,6 +726,8 @@ public class Dash implements Serializable {
 			if(iter.hasNext()) {
 				// too many beans; let's give up on caching.
 				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), beansToReturn, iter);
+				if(log.isLoggable(Level.INFO))
+					log.info("query gave up after "+ctr+" iterations for "+request);
 				return new BasicEntry<>(dashIter, CacheResults.Type.ABORT_TOO_MANY);
 			}
 			
@@ -697,6 +740,8 @@ public class Dash implements Serializable {
 			cache.put(cacheKey, beanOids);
 			
 			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), beansToReturn);
+			if(log.isLoggable(Level.INFO))
+				log.info("queried "+ctr+" iterations for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.MISS);
 		}
 		
@@ -715,7 +760,7 @@ public class Dash implements Serializable {
 		
 		Iterator<Operator> splitIter = splitOperators.iterator();
 		
-		boolean removedOneOrMoreOperators = false;
+		int removedOperators = 0;
 		while(splitIter.hasNext()) {
 			Operator splitOperator = splitIter.next();
 			CacheKey splitKey = new CacheKey(splitOperator, request.orderBy, request.beanQuery.isDistinct());
@@ -727,13 +772,17 @@ public class Dash implements Serializable {
 							request.beanQuery.getBaseClass(), splitOids);
 				if(splitBeans!=null) {
 					// great: we got *some* of the beans by looking at a split query
-					removedOneOrMoreOperators = true;
+					removedOperators++;
+					if(log.isLoggable(Level.INFO))
+						log.info("resolved split operator "+splitBeans.size()+" beans: "+splitOperator);
 					knownBeans.addAll(splitBeans);
 					splitIter.remove();
 				} else {
 					// We know the exact oids, but those beans aren't in Aspen's cache anymore.
 					// This splitOperator is a lost cause now: so ignore it.
 					cache.remove(splitKey);
+					if(log.isLoggable(Level.INFO))
+						log.info("identified split operator with "+splitOids.size()+" beans, but purged it: "+splitOperator);
 				}
 			}
 		}
@@ -745,14 +794,18 @@ public class Dash implements Serializable {
 		if(splitOperators.isEmpty()) {
 			// we broke the criteria down into small pieces and looked up every piece
 			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), knownBeans);
+			if(log.isLoggable(Level.INFO))
+				log.info("collection "+knownBeans.size()+" split beans for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.HIT_FROM_SPLIT);
-		} else if(removedOneOrMoreOperators) {
+		} else if(removedOperators>0) {
 			// we resolved *some* operators, but not all of them.
 			Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
 			Criteria trimmedCriteria = createCriteria(trimmedOperator);
 			
 			// ... so we're going to make a new (narrower) query, and merge its results with knownBeans
 			ourQuery = cloneBeanQuery(request.beanQuery, trimmedCriteria);
+			if(log.isLoggable(Level.INFO))
+				log.info("removed "+ removedOperators+", rewrote as: "+ourQuery);
 		}
 		
 		if(knownBeans.isEmpty()) {
@@ -767,7 +820,7 @@ public class Dash implements Serializable {
 
 		QueryIterator iter = broker.getIteratorByQuery(ourQuery);
 		int ctr = 0;
-		int maxSize = getMaxOidListSize(removedOneOrMoreOperators, ourQuery);
+		int maxSize = getMaxOidListSize(removedOperators>0, ourQuery);
 		while(iter.hasNext() && ctr<maxSize) {
 			X2BaseBean bean = (X2BaseBean) iter.next();
 			knownBeans.add(bean);
@@ -777,6 +830,8 @@ public class Dash implements Serializable {
 		if(iter.hasNext()) {
 			// too many beans; let's give up on caching.
 			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), knownBeans, iter);
+			if(log.isLoggable(Level.INFO))
+				log.info("gave up after "+ctr+" iterations for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.ABORT_TOO_MANY);
 		}
 		
@@ -807,20 +862,29 @@ public class Dash implements Serializable {
 
 				CacheKey splitKey = new CacheKey(op, request.orderBy, ourQuery.isDistinct());
 				cache.put(splitKey, oids);
+				if(log.isLoggable(Level.INFO))
+					log.info("identified "+oids.size()+" oids for split query "+op);
 			}
 		}
 
 		QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), knownBeans);
-		if(removedOneOrMoreOperators) {
+		if(removedOperators > 0) {
+			if(log.isLoggable(Level.INFO))
+				log.info("queried "+ctr+" iterations (with "+removedOperators+" cached split queries) for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.REDUCED_QUERY_FROM_SPLIT);
 		} else {
+			if(log.isLoggable(Level.INFO))
+				log.info("queried "+ctr+" iterations for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.MISS);
 		}
 	}
 	
 	protected Collection<X2BaseBean> getBeansFromSplitOperator(PersistenceKey persistenceKey, Class beanClass, Collection<Operator> splitOperators) {
 		Collection<X2BaseBean> beans = new HashSet<>();
+		Logger log = getLog();
+		int ctr = 0;
 		for(Operator op : splitOperators) {
+			
 			List ops;
 			if(op instanceof And) {
 				ops = ((And)op).getOperands();
@@ -828,6 +892,7 @@ public class Dash implements Serializable {
 				ops = new ArrayList<>();
 				ops.add(op);
 			}
+			
 			EqualTo oidEqualTo = null;
 			for(Object z : ops) {
 				if(z instanceof EqualTo && X2BaseBean.COL_OID.equals( ((EqualTo)z).getAttribute()) ) {
@@ -835,16 +900,22 @@ public class Dash implements Serializable {
 					break;
 				}
 			}
+			X2BaseBean bean = oidEqualTo==null ? null :
+				Dash.getBeanFromGlobalCache(persistenceKey, beanClass, oidEqualTo.getAttribute() );
 			
-			if(oidEqualTo==null)
+			if(bean==null) {
+				if(log.isLoggable(Level.INFO))
+					log.info("aborting after "+ctr+" beans");
 				return null;
-			
-			X2BaseBean bean = Dash.getBeanFromGlobalCache(persistenceKey, beanClass, oidEqualTo.getAttribute() );
-			if(bean==null)
-				return null;
+			}
 			
 			beans.add(bean);
+			ctr++;
 		}
+		
+		if(log.isLoggable(Level.INFO))
+			log.info("returning "+beans.size()+" beans");
+		
 		return beans;
 	}
 
@@ -865,7 +936,13 @@ public class Dash implements Serializable {
 	 * Convert an Operator into an Criteria.
 	 */
 	public Criteria createCriteria(Operator operator) {
-		return getCriteriaToOperatorConverter().createCriteria(operator);
+		try {
+			return getCriteriaToOperatorConverter().createCriteria(operator);
+		} finally {
+			Logger log = getLog();
+			if(log.isLoggable(Level.INFO))
+				log.info(""+operator);
+		}
 	}
 	
 	/**
@@ -880,7 +957,15 @@ public class Dash implements Serializable {
 	 * Convert a Criteria into an Operator.
 	 */
 	public Operator createOperator(Criteria criteria) {
-		return getCriteriaToOperatorConverter().createOperator(criteria);
+		Operator operator = null;
+		try {
+			operator = getCriteriaToOperatorConverter().createOperator(criteria);
+		} finally {
+			Logger log = getLog();
+			if(log.isLoggable(Level.INFO))
+				log.info(""+operator);
+		}
+		return operator;
 	}
 
 	/** 
@@ -920,26 +1005,45 @@ public class Dash implements Serializable {
 	 * Clear all cached data from memory.
 	 */
 	public void clearAll() {
-		synchronized(cacheByBeanType) {
-			cachePool.clear();
-			cacheByBeanType.clear();
+		try {
+			synchronized(cacheByBeanType) {
+				cachePool.clear();
+				cacheByBeanType.clear();
+			}
+		} finally {
+			Logger log = getLog();
+			if(log.isLoggable(Level.INFO))
+				log.info("");
 		}
 	}
 	
 	public int clearCache(Class beanType) {
-		Cache<CacheKey, List<String>> cache = getCache(beanType, false);
-		if (cache != null) {
-			int size = cache.size();
-			cache.clear();
-			return size;
+		int size = -1;
+		try {
+			Cache<CacheKey, List<String>> cache = getCache(beanType, false);
+			if (cache != null) {
+				size = cache.size();
+				cache.clear();
+				return size;
+			}
+			return 0;
+		} finally {
+			Logger log = getLog();
+			if(log.isLoggable(Level.INFO)) {
+				if(size==-1) {
+					log.info(beanType+", no cache available");
+				} else {
+					log.info(beanType+", "+size+" entries removed");
+				}
+			}
 		}
-		return 0;
 	}
 	
 	/**
 	 * Return true if we should consult/update the cache for a given query.
 	 */
 	protected boolean isCaching(QueryRequest request) {
+		Logger log = getLog();
 		if(request.profile.getCounter()<10) {
 			// The Dash caching layer is supposed to help address
 			// frequent repetitive queries. Don't interfere with 
@@ -947,13 +1051,20 @@ public class Dash implements Serializable {
 			// outermost query/loop (such as grabbing 10,000 students
 			// to iterate over). We want to let those big and rare
 			// queries slip by this caching model with no interference.
+
+			if(log.isLoggable(Level.INFO))
+				log.info("skipping because profile is too small: "+request.profile);
 			
 			return false;
 		}
 		
-		if(request.profile.getCounter() > 100 && request.profile.getAverageReturnCount() > getMaxOidListSize(false, request.beanQuery)) {
+		int max = getMaxOidListSize(false, request.beanQuery);
+		if(request.profile.getCounter() > 100 && request.profile.getAverageReturnCount() > max) {
 			// If the odds are decent that we're going to get close to
 			// our limit: give up now without additional overhead.
+
+			if(log.isLoggable(Level.INFO))
+				log.info("skipping because profile shows average exceeds "+max+": "+request.profile);
 			
 			return false;
 		}
@@ -1064,6 +1175,35 @@ public class Dash implements Serializable {
 	 */
 	public CachePool getCachePool() {
 		return cachePool;
+	}
+
+	Logger log = Logger.getAnonymousLogger();
+	ThreadLocal<Logger> logByThread = new ThreadLocal<>();
+	
+	/**
+	 * Return a Writer to log debugging information to.
+	 */
+	public Logger getLog() {
+		Logger r = logByThread.get();
+		if(r==null)
+			r = log;
+		return r;
+	}
+	
+	/**
+	 * Set a log for debugging.
+	 * 
+	 * @param appendable the new Appendable to append output to
+	 * @param threadSpecific if true then this Appendable will only be consulted
+	 * for the current thread. If false then this Appendable will apply to all threads.
+	 */
+	public void setLog(Logger log,boolean threadSpecific) {
+		if(threadSpecific) {
+			logByThread.set(log);
+		} else {
+			logByThread.set(null);
+			this.log = log;
+		}
 	}
 
 }
