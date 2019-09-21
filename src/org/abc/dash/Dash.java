@@ -1001,8 +1001,6 @@ public class Dash {
 	protected boolean isCachingSplitResults(QueryRequest request, Collection<X2BaseBean> beansToEvaluate) {
 		if(!request.orderBy.isSimple())
 			return false;
-		if(beansToEvaluate.size()>100)
-			return false;
 		return true;
 	}
 
