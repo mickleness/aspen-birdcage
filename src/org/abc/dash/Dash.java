@@ -9,6 +9,7 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -24,10 +25,8 @@ import org.abc.util.BasicEntry;
 import org.abc.util.OrderByComparator;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.apache.ojb.broker.Identity;
-import org.apache.ojb.broker.PersistenceBroker;
 import org.apache.ojb.broker.metadata.FieldHelper;
 import org.apache.ojb.broker.query.Criteria;
-import org.apache.ojb.broker.query.Query;
 import org.apache.ojb.broker.query.QueryByCriteria;
 
 import com.follett.fsc.core.framework.persistence.BeanQuery;
@@ -36,8 +35,11 @@ import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.beans.path.BeanTablePath;
+import com.follett.fsc.core.k12.business.ModelProperty;
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.web.AppGlobals;
+import com.pump.data.operator.And;
+import com.pump.data.operator.EqualTo;
 import com.pump.data.operator.Operator;
 import com.pump.data.operator.OperatorContext;
 import com.pump.util.Cache;
@@ -282,7 +284,11 @@ public class Dash implements Serializable {
 			 * This indicates caching wasn't attempted because a Criteria couldn't be converted to an Operator.
 			 * (This is probably because a criteria contained a subquery, or some other unsupported feature).
 			 */
-			SKIP_UNSUPPORTED;
+			SKIP_UNSUPPORTED,
+			/**
+			 * This unusual case indicates that an oid was directly embedded in the query (possibly with other query criteria)
+			 */
+			HIT_FROM_OID;
 		}
 		
 		protected Map<Type, AtomicLong> matches = new HashMap<>();
@@ -633,6 +639,36 @@ public class Dash implements Serializable {
 
 		Operator canonicalOperator = request.operator.getCanonicalOperator();
 		Collection<Operator> splitOperators = canonicalOperator.split();
+		
+		if(isSimpleAttributes(canonicalOperator.getAttributes())) {
+			
+			Collection<X2BaseBean> beansFromOperator = getBeansFromSplitOperator(broker.getPersistenceKey(), request.beanQuery.getBaseClass(), splitOperators);
+			givenSpecificOids : if(beansFromOperator!=null) {
+				
+				//this is an odd case, but it came up in real-world tests:
+				//the query specifically gives us the oid, possibly with other conditions.
+				//such as:
+				//  contains(oid, {"GRQ00000063MDb", "GRQ00000063M5p"}) && programStudiesOid == "GPR0000001e0Cp"
+				//or:
+				//  oid == "std01000055744" && studentEvents.eventType == "GRADUATION REQUIREMENT"
+				
+				// the former should be simple enough to convert using getBeanByOids and evaluate.
+				// the latter (because it relies on a related bean) is not safe to optimize here.
+				
+				Collection<X2BaseBean> returnValue = new TreeSet<>(request.orderBy);
+				for(X2BaseBean bean : beansFromOperator) {
+					try {
+						if(request.operator.evaluate(Dash.CONTEXT, beansFromOperator))
+							returnValue.add(bean);
+					} catch(Exception e) {
+						getUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), e);
+						break givenSpecificOids;
+					}
+				}
+				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), returnValue);
+				return new BasicEntry<>(dashIter, CacheResults.Type.HIT_FROM_OID);
+			}
+		}
 
 		if(splitOperators.size() <= 1 || !isCachingSplit(request)) {
 			// this is the simple scenario (no splitting)
@@ -782,6 +818,49 @@ public class Dash implements Serializable {
 		}
 	}
 	
+	protected Collection<X2BaseBean> getBeansFromSplitOperator(PersistenceKey persistenceKey, Class beanClass, Collection<Operator> splitOperators) {
+		Collection<X2BaseBean> beans = new HashSet<>();
+		for(Operator op : splitOperators) {
+			List ops;
+			if(op instanceof And) {
+				ops = ((And)op).getOperands();
+			} else {
+				ops = new ArrayList<>();
+				ops.add(op);
+			}
+			EqualTo oidEqualTo = null;
+			for(Object z : ops) {
+				if(z instanceof EqualTo && X2BaseBean.COL_OID.equals( ((EqualTo)z).getAttribute()) ) {
+					oidEqualTo = (EqualTo) z;
+					break;
+				}
+			}
+			
+			if(oidEqualTo==null)
+				return null;
+			
+			X2BaseBean bean = Dash.getBeanFromGlobalCache(persistenceKey, beanClass, oidEqualTo.getAttribute() );
+			if(bean==null)
+				return null;
+			
+			beans.add(bean);
+		}
+		return beans;
+	}
+
+	/**
+	 * Return true if the argument doesn't contain a period. For example on the SisStudent bean 
+	 * the attribute "nameView" is simple, but "person.firstName" is not simple because it relies 
+	 * on a related bean.
+	 */
+	protected boolean isSimpleAttributes(Collection<String> attributes) {
+		for(String attr : attributes) {
+			if(attr.indexOf(ModelProperty.PATH_DELIMITER)!=-1)
+				return false;
+		}
+		return true;
+	}
+
 	/**
 	 * Convert an Operator into an Criteria.
 	 */
@@ -907,8 +986,7 @@ public class Dash implements Serializable {
 		
 		return true;
 	}
-
-	private ThreadLocal<UncaughtExceptionHandler> uncaughtExceptionHandlers = new ThreadLocal<>();
+	
 	static UncaughtExceptionHandler DEFAULT_UNCAUGHT_EXCEPTION_HANDLER = new UncaughtExceptionHandler() {
 
 		@Override
@@ -918,19 +996,35 @@ public class Dash implements Serializable {
 		
 	};
 	
+	/**
+	 * This UncaughtExceptionHandler does nothing; it should be used if you call {@link #setUncaughtExceptionHandler(UncaughtExceptionHandler)} and pass in null.
+	 */
+	static UncaughtExceptionHandler NULL_UNCAUGHT_EXCEPTION_HANDLER = new UncaughtExceptionHandler() {
+
+		@Override
+		public void uncaughtException(Thread t, Throwable e) {
+			//intentionally empty
+		}
+		
+	};
+	
+	UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
+	
+	/**
+	 * Return the UncaughtExceptionHandler. The default handler writes the stack trace to the AppGlobals log.
+	 */
 	public UncaughtExceptionHandler getUncaughtExceptionHandler() {
-		UncaughtExceptionHandler ueh = uncaughtExceptionHandlers.get();
-		if(ueh==null)
-			ueh = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
-		return ueh;
+		return uncaughtExceptionHandler;
 	}
 	
+	/**
+	 * Assign the UncaughtExceptionHandler.
+	 * 
+	 * @param ueh the new UncaughtExceptionHandler. If this is null then an empty UncaughtExceptionHandler is used (that does nothing).
+	 */
 	public void setUncaughtExceptionHandler(UncaughtExceptionHandler ueh) {
-		if(ueh==null) {
-			uncaughtExceptionHandlers.remove();
-		} else {
-			uncaughtExceptionHandlers.set(ueh);
-		}
+		if(ueh==null) ueh = NULL_UNCAUGHT_EXCEPTION_HANDLER;;
+		uncaughtExceptionHandler = ueh;
 	}
 	
 	/**
