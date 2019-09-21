@@ -485,6 +485,10 @@ public class Dash {
 	protected CacheResults cacheResults = new CacheResults();
 	protected Map<Class<?>, Cache<CacheKey, List<String>>> cacheByBeanType = new HashMap<>();
 
+	private Logger log = Logger.getAnonymousLogger();
+	private ThreadLocal<Logger> logByThread = new ThreadLocal<>();
+	
+	protected Collection<Class> modifiedBeanTypes = new HashSet<>();
 
 	/**
 	 * Create a new Dash that keeps up to 5,0000 elements in the cache for up to 5 minutes.
@@ -513,6 +517,7 @@ public class Dash {
 		Objects.requireNonNull(cachePool);
 		this.cachePool = cachePool;
 		profiles = new Cache<>(cachePool);
+		getLog().setLevel(Level.OFF);
 	}
 
 	/**
@@ -1003,6 +1008,8 @@ public class Dash {
 
 	/**
 	 * Clear all cached data from memory.
+	 * <p>
+	 * This is called when {@link X2Broker#clearCache()} is invoked.
 	 */
 	public void clearAll() {
 		try {
@@ -1017,7 +1024,27 @@ public class Dash {
 		}
 	}
 	
+	/**
+	 * This method should be notified when the X2Broker saves/updates/deletes
+	 * a particular type of bean.
+	 * <p>
+	 * This clears our cached records for that bean type, and later if
+	 * {@link X2Broker#rollbackTransaction()} is called then it will
+	 * again clear our cached records for that bean type. (So if you
+	 * modify a SisAddress: we have to clear all our address-related cached info.
+	 * Then if you rollback your transaction: we need to clear all our
+	 * address-related cached info again.)
+	 */
+	public void modifyBeanRecord(Class beanType) {
+		Objects.requireNonNull(beanType);
+		synchronized(modifiedBeanTypes) {
+			modifiedBeanTypes.add(beanType);
+		}
+		clearCache(beanType);
+	}
+	
 	public int clearCache(Class beanType) {
+		Objects.requireNonNull(beanType);
 		int size = -1;
 		try {
 			Cache<CacheKey, List<String>> cache = getCache(beanType, false);
@@ -1176,9 +1203,6 @@ public class Dash {
 	public CachePool getCachePool() {
 		return cachePool;
 	}
-
-	Logger log = Logger.getAnonymousLogger();
-	ThreadLocal<Logger> logByThread = new ThreadLocal<>();
 	
 	/**
 	 * Return a Writer to log debugging information to.
@@ -1203,6 +1227,23 @@ public class Dash {
 		} else {
 			logByThread.set(null);
 			this.log = log;
+		}
+	}
+
+	/**
+	 * This is called during {@link X2Broker#rollbackTransaction()} to clear
+	 * all cached information related beans that may have been changed during
+	 * this rollback.
+	 */
+	public void clearModifiedBeanTypes() {
+		Class[] z;
+		synchronized(modifiedBeanTypes) {
+			z = modifiedBeanTypes.toArray(new Class[modifiedBeanTypes.size()]);
+			modifiedBeanTypes.clear();
+		}
+		
+		for(Class c : z) {
+			clearCache(c);
 		}
 	}
 

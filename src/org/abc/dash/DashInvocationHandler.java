@@ -206,23 +206,24 @@ class DashInvocationHandler implements InvocationHandler {
 			String[] columns = (String[]) args[1];
 			int[] mapSizes = (int[]) args[2];
 			return createNestedMap(proxy, query, columns, mapSizes, false);
-		} else if (method_clearCache.equals(method)
-				|| method_rollbackTransaction1.equals(method)
-				|| method_rollbackTransaction2.equals(method)) {
+		} else if (method_clearCache.equals(method)) {
 			dash.clearAll();
+		} else if(method_rollbackTransaction1.equals(method)
+				|| method_rollbackTransaction2.equals(method)) {
+			dash.clearModifiedBeanTypes();
 		} else if ((method_deleteBean.equals(method) || method.getName()
 				.startsWith("saveBean")) && args[0] instanceof X2BaseBean) {
 			X2BaseBean bean = (X2BaseBean) args[0];
 			Class t = bean.getClass();
-			dash.clearCache(t);
+			dash.modifyBeanRecord(t);
 		} else if (method_deleteBeanByOid.equals(method)) {
 			Class beanType = (Class) args[0];
-			dash.clearCache(beanType);
+			dash.modifyBeanRecord(beanType);
 		} else if (method_deleteByQuery.equals(method)
 				|| method_executeUpdateQuery.equals(method)
 				|| method_executeInsertQuery.equals(method)) {
 			Query query = (Query) args[0];
-			dash.clearCache(query.getBaseClass());
+			dash.modifyBeanRecord(query.getBaseClass());
 		}
 
 		return method.invoke(broker, args);
