@@ -289,7 +289,11 @@ public class Dash {
 			/**
 			 * This unusual case indicates that an oid was directly embedded in the query (possibly with other query criteria)
 			 */
-			HIT_FROM_OID;
+			HIT_FROM_OID,
+			/**
+			 * 
+			 */
+			HIT_REFERENCE_BASED_CACHE;
 		}
 		
 		protected Map<Type, AtomicLong> matches = new HashMap<>();
@@ -344,7 +348,16 @@ public class Dash {
 
 		@Override
 		public String toString() {
-			return "CacheResults[ "+matches+" ]";
+			StringBuilder sb = new StringBuilder();
+			for(Entry<Type, AtomicLong> entry : matches.entrySet()) {
+				if(sb.length()==0) {
+					sb.append("CacheResults[ "+entry.getKey()+"="+entry.getValue());
+				} else {
+					sb.append(",\n  "+entry.getKey()+"="+entry.getValue());
+				}
+			}
+			sb.append("]");
+			return sb.toString();
 		}
 
 		@SuppressWarnings("unchecked")
@@ -482,6 +495,7 @@ public class Dash {
 		
 	}
 	
+	protected PersistenceKey persistenceKey;
 	protected CachePool cachePool;
 	protected Cache<ProfileKey, TemplateQueryProfile> profiles;
 	protected CacheResults cacheResults = new CacheResults();
@@ -497,8 +511,8 @@ public class Dash {
 	/**
 	 * Create a new Dash that keeps up to 5,0000 elements in the cache for up to 5 minutes.
 	 */
-	public Dash() {
-		this(5000, 1000*60*5);
+	public Dash(PersistenceKey persistenceKey) {
+		this(persistenceKey, 5000, 1000*60*5);
 	}
 	
 	/**
@@ -508,8 +522,8 @@ public class Dash {
 	 * @param maxCacheDuration the maximum duration (in milliseconds) any entry
 	 * can exist in the cache.
 	 */
-	public Dash(int maxCacheSize, long maxCacheDuration) {
-		this(new CachePool(maxCacheSize, maxCacheDuration, -1));
+	public Dash(PersistenceKey persistenceKey,int maxCacheSize, long maxCacheDuration) {
+		this(persistenceKey, new CachePool(maxCacheSize, maxCacheDuration, -1));
 	}
 	
 	/**
@@ -517,9 +531,11 @@ public class Dash {
 	 * 
 	 * @param cachePool the CachePool used to maintain all cached data.
 	 */
-	public Dash(CachePool cachePool) {
+	public Dash(PersistenceKey persistenceKey,CachePool cachePool) {
 		Objects.requireNonNull(cachePool);
+		Objects.requireNonNull(persistenceKey);
 		this.cachePool = cachePool;
+		this.persistenceKey = persistenceKey;
 		profiles = new Cache<>(cachePool);
 		getLog().setLevel(Level.OFF);
 	}
@@ -554,16 +570,20 @@ public class Dash {
 	}
 	
 	public X2BaseBean getBeanByOid(PersistenceKey persistenceKey, Class beanClass,String beanOid) {
-		Logger logger = getLog();
+		Logger log = getLog();
 		X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanClass, beanOid);
 		if(bean!=null) {
 			if(log.isLoggable(Level.INFO))
-				logger.info("global cache resolved "+beanOid);
+				log.info("global cache resolved "+beanOid);
 		} else {
 			bean = getBeanFromLocalCache(beanOid);
 			if(bean!=null) {
 				if(log.isLoggable(Level.INFO))
-					logger.info("local cache resolved "+beanOid);
+					log.info("local cache resolved "+beanOid);
+				cacheResults.increment(CacheResults.Type.HIT_REFERENCE_BASED_CACHE);
+			} else {
+				if(log.isLoggable(Level.INFO))
+					log.info("no cache resolved "+beanOid);
 			}
 		}
 		return bean;
@@ -605,6 +625,8 @@ public class Dash {
 	 */
 	@SuppressWarnings({ "rawtypes" })
 	public QueryIterator createQueryIterator(X2Broker broker,QueryByCriteria beanQuery) {
+		validatePersistenceKey(broker.getPersistenceKey());
+		
 		Logger log = getLog();
 		if(!isBeanQuery(beanQuery)) {
 			if(log.isLoggable(Level.INFO))
@@ -694,7 +716,7 @@ public class Dash {
 			QueryIterator iter = broker.getIteratorByQuery(request.beanQuery);
 			if(log.isLoggable(Level.INFO))
 				log.info("aborting to default broker");
-			iter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
+			iter = new QueryIteratorDash(this, null, iter);
 			return new BasicEntry<>(iter, CacheResults.Type.SKIP);
 		}
 		
@@ -706,7 +728,7 @@ public class Dash {
 			List<X2BaseBean> beans = getBeans(broker.getPersistenceKey(), request.beanQuery.getBaseClass(), beanOids);
 			if(beans!=null) {
 				// This is our ideal case: we know the complete query results
-				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), beans);
+				QueryIterator dashIter = new QueryIteratorDash(this, beans);
 				if(log.isLoggable(Level.INFO))
 					log.info("found "+beans.size()+" beans for "+request);
 				return new BasicEntry<>(dashIter, CacheResults.Type.HIT);
@@ -720,7 +742,7 @@ public class Dash {
 			QueryByCriteria newQuery = cloneBeanQuery(request.beanQuery, oidCriteria);
 
 			QueryIterator iter = broker.getIteratorByQuery(newQuery);
-			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), null, iter);
+			QueryIterator dashIter = new QueryIteratorDash(this, null, iter);
 
 			if(log.isLoggable(Level.INFO))
 				log.info("found "+beanOids.size()+" bean oids for "+request);
@@ -758,7 +780,7 @@ public class Dash {
 						break givenSpecificOids;
 					}
 				}
-				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), returnValue);
+				QueryIterator dashIter = new QueryIteratorDash(this, returnValue);
 				if(log.isLoggable(Level.INFO))
 					log.info("filtered "+returnValue.size()+" bean oids for "+request);
 				return new BasicEntry<>(dashIter, CacheResults.Type.HIT_FROM_OID);
@@ -780,7 +802,7 @@ public class Dash {
 			
 			if(iter.hasNext()) {
 				// too many beans; let's give up on caching.
-				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), beansToReturn, iter);
+				QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn, iter);
 				if(log.isLoggable(Level.INFO))
 					log.info("query gave up after "+ctr+" iterations for "+request);
 				return new BasicEntry<>(dashIter, CacheResults.Type.ABORT_TOO_MANY);
@@ -794,7 +816,7 @@ public class Dash {
 			}
 			cache.put(cacheKey, beanOids);
 			
-			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), beansToReturn);
+			QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn);
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.MISS);
@@ -848,7 +870,7 @@ public class Dash {
 		QueryByCriteria ourQuery = request.beanQuery;
 		if(splitOperators.isEmpty()) {
 			// we broke the criteria down into small pieces and looked up every piece
-			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), knownBeans);
+			QueryIterator dashIter = new QueryIteratorDash(this, knownBeans);
 			if(log.isLoggable(Level.INFO))
 				log.info("collection "+knownBeans.size()+" split beans for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.HIT_FROM_SPLIT);
@@ -885,7 +907,7 @@ public class Dash {
 
 		if(iter.hasNext()) {
 			// too many beans; let's give up on caching.
-			QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), knownBeans, iter);
+			QueryIterator dashIter = new QueryIteratorDash(this, knownBeans, iter);
 			if(log.isLoggable(Level.INFO))
 				log.info("gave up after "+ctr+" iterations for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.ABORT_TOO_MANY);
@@ -923,7 +945,7 @@ public class Dash {
 			}
 		}
 
-		QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), knownBeans);
+		QueryIterator dashIter = new QueryIteratorDash(this, knownBeans);
 		if(removedOperators > 0) {
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations (with "+removedOperators+" cached split queries) for "+request);
@@ -935,7 +957,7 @@ public class Dash {
 		}
 	}
 	
-	private void cacheBeanLocal(X2BaseBean bean) {
+	protected void cacheBeanLocal(X2BaseBean bean) {
 		synchronized(weakBeanCache) {
 			weakBeanCache.put(bean.getOid(), new WeakReference<>(bean, localReferenceQueue));
 		}
@@ -1232,6 +1254,8 @@ public class Dash {
 	 * this factory's ThreadPool then the argument is returned as-is.
 	 */
 	public BrokerDash convertToBrokerDash(X2Broker broker) {
+		validatePersistenceKey(broker.getPersistenceKey());
+		
 		if (broker instanceof BrokerDash) {
 			BrokerDash bd = (BrokerDash) broker;
 			Dash sharedResource = bd.getDash();
@@ -1239,6 +1263,11 @@ public class Dash {
 				return bd;
 		}
 		return createBrokerDash(broker);
+	}
+
+	private void validatePersistenceKey(PersistenceKey otherPersistenceKey) {
+		if(persistenceKey!=otherPersistenceKey)
+			throw new IllegalStateException(persistenceKey+" != "+otherPersistenceKey);
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -1305,6 +1334,10 @@ public class Dash {
 		for(Class c : z) {
 			clearCache(c);
 		}
+	}
+
+	public PersistenceKey getPersistenceKey() {
+		return persistenceKey;
 	}
 
 }

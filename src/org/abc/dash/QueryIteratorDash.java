@@ -46,7 +46,7 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	 */
 	protected QueryIterator<X2BaseBean> queryIterator;
 	
-	protected PersistenceKey persistenceKey;
+	protected Dash dash;
 	protected List<CloseListener> closeListeners = new ArrayList<>();
 	
 	/**
@@ -57,8 +57,8 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	/**
 	 * Create an iterator that will walk through a collection of beans.
 	 */
-	public QueryIteratorDash(PersistenceKey persistenceKey,Collection<X2BaseBean> beans) {
-		this(persistenceKey, beans, null);
+	public QueryIteratorDash(Dash dash,Collection<X2BaseBean> beans) {
+		this(dash, beans, null);
 	}
 
 	/**
@@ -72,15 +72,14 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	 * with the SortedSet. (This assumes the QueryIterator will return results using the
 	 * same order-by rules that the SortedSet follows.)
 	 * 
-	 * @param persistenceKey the PersistenceKey associated with this iterator
 	 * @param beans an optional collection of beans to walk through. This may be null.
 	 * @param queryIterator the optional QueryIterator to walk through. This may be null.
 	 */
-	public QueryIteratorDash(PersistenceKey persistenceKey, Collection<X2BaseBean> beans, QueryIterator<X2BaseBean> queryIterator) {
-		Objects.requireNonNull(persistenceKey);
+	public QueryIteratorDash(Dash dash, Collection<X2BaseBean> beans, QueryIterator<X2BaseBean> queryIterator) {
+		Objects.requireNonNull(dash);
 		this.beans = beans==null ? new LinkedList<X2BaseBean>() : beans;
 		this.queryIterator = queryIterator;
-		this.persistenceKey = persistenceKey;
+		this.dash = dash;
 	}
 	
 	/**
@@ -127,6 +126,7 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 		if(queryIterator!=null) {
 			if(queryIterator.hasNext()) {
 				X2BaseBean bean = queryIterator.next();
+				dash.cacheBeanLocal(bean);
 				beans.add(bean);
 			}
 			if(!queryIterator.hasNext()) {
@@ -156,7 +156,7 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 
 	@Override
 	public PersistenceKey getPersistenceKey() {
-		return persistenceKey;
+		return dash.getPersistenceKey();
 	}
 
 	@Override
