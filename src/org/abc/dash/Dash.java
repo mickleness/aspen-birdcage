@@ -3,6 +3,8 @@ package org.abc.dash;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
@@ -218,10 +220,10 @@ public class Dash {
 	/**
 	 * Return all the beans in a list of bean oids, or null if any of those beans were not readily available in the global cache.
 	 */
-	public static List<X2BaseBean> getBeansFromGlobalCache(PersistenceKey persistenceKey,Class<?> beanType,List<String> beanOids) {
+	public List<X2BaseBean> getBeans(PersistenceKey persistenceKey,Class<?> beanType,List<String> beanOids) {
 		List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
 		for(String beanOid : beanOids) {
-			X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanType, beanOid);
+			X2BaseBean bean = getBeanByOid(persistenceKey, beanType, beanOid);
 			if(bean==null)
 				return null;
 			beans.add(bean);
@@ -484,7 +486,8 @@ public class Dash {
 	protected Cache<ProfileKey, TemplateQueryProfile> profiles;
 	protected CacheResults cacheResults = new CacheResults();
 	protected Map<Class<?>, Cache<CacheKey, List<String>>> cacheByBeanType = new HashMap<>();
-
+	protected Map<String, WeakReference<X2BaseBean>> weakBeanCache = new HashMap<>();
+	
 	private Logger log = Logger.getAnonymousLogger();
 	private ThreadLocal<Logger> logByThread = new ThreadLocal<>();
 	
@@ -519,6 +522,51 @@ public class Dash {
 		this.cachePool = cachePool;
 		profiles = new Cache<>(cachePool);
 		getLog().setLevel(Level.OFF);
+	}
+	
+	ReferenceQueue<X2BaseBean> localReferenceQueue = new ReferenceQueue<>();
+	public X2BaseBean getBeanFromLocalCache(String oid) {
+		synchronized(weakBeanCache) {
+			int removedRefs = 0;
+			while(localReferenceQueue.poll()!=null) {
+				removedRefs++;
+			}
+			if(removedRefs>0) {
+				Iterator<Entry<String, WeakReference<X2BaseBean>>> iter = weakBeanCache.entrySet().iterator();
+				while(iter.hasNext() && removedRefs>0) {
+					Entry<String, WeakReference<X2BaseBean>> entry = iter.next();
+					WeakReference<X2BaseBean> ref = entry.getValue();
+					if(ref.isEnqueued() || ref.get() == null) {
+						iter.remove();
+						removedRefs--;
+					}
+				}
+			}
+				
+			WeakReference<X2BaseBean> beanRef = weakBeanCache.get(oid);
+			if(beanRef==null)
+				return null;
+			X2BaseBean bean = beanRef.get();
+			if(bean==null)
+				weakBeanCache.remove(oid);
+			return bean;
+		}
+	}
+	
+	public X2BaseBean getBeanByOid(PersistenceKey persistenceKey, Class beanClass,String beanOid) {
+		Logger logger = getLog();
+		X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanClass, beanOid);
+		if(bean!=null) {
+			if(log.isLoggable(Level.INFO))
+				logger.info("global cache resolved "+beanOid);
+		} else {
+			bean = getBeanFromLocalCache(beanOid);
+			if(bean!=null) {
+				if(log.isLoggable(Level.INFO))
+					logger.info("local cache resolved "+beanOid);
+			}
+		}
+		return bean;
 	}
 
 	/**
@@ -655,7 +703,7 @@ public class Dash {
 		List<String> beanOids = cache.get(cacheKey);
 		
 		if (beanOids != null) {
-			List<X2BaseBean> beans = getBeansFromGlobalCache(broker.getPersistenceKey(), request.beanQuery.getBaseClass(), beanOids);
+			List<X2BaseBean> beans = getBeans(broker.getPersistenceKey(), request.beanQuery.getBaseClass(), beanOids);
 			if(beans!=null) {
 				// This is our ideal case: we know the complete query results
 				QueryIterator dashIter = new QueryIteratorDash(broker.getPersistenceKey(), beans);
@@ -725,6 +773,7 @@ public class Dash {
 			int maxSize = getMaxOidListSize(false, request.beanQuery);
 			while(iter.hasNext() && ctr<maxSize) {
 				X2BaseBean bean = (X2BaseBean) iter.next();
+				cacheBeanLocal(bean);
 				beansToReturn.add(bean);
 				ctr++;
 			}
@@ -774,7 +823,7 @@ public class Dash {
 			List<String> splitOids = cache.get(splitKey);
 			if(splitOids!=null) {
 				List<X2BaseBean> splitBeans = 
-					getBeansFromGlobalCache(broker.getPersistenceKey(), 
+					getBeans(broker.getPersistenceKey(), 
 							request.beanQuery.getBaseClass(), splitOids);
 				if(splitBeans!=null) {
 					// great: we got *some* of the beans by looking at a split query
@@ -829,6 +878,7 @@ public class Dash {
 		int maxSize = getMaxOidListSize(removedOperators>0, ourQuery);
 		while(iter.hasNext() && ctr<maxSize) {
 			X2BaseBean bean = (X2BaseBean) iter.next();
+			cacheBeanLocal(bean);
 			knownBeans.add(bean);
 			ctr++;
 		}
@@ -885,6 +935,12 @@ public class Dash {
 		}
 	}
 	
+	private void cacheBeanLocal(X2BaseBean bean) {
+		synchronized(weakBeanCache) {
+			weakBeanCache.put(bean.getOid(), new WeakReference<>(bean, localReferenceQueue));
+		}
+	}
+	
 	protected Collection<X2BaseBean> getBeansFromSplitOperator(PersistenceKey persistenceKey, Class beanClass, Collection<Operator> splitOperators) {
 		Collection<X2BaseBean> beans = new HashSet<>();
 		Logger log = getLog();
@@ -907,7 +963,7 @@ public class Dash {
 				}
 			}
 			X2BaseBean bean = oidEqualTo==null ? null :
-				Dash.getBeanFromGlobalCache(persistenceKey, beanClass, oidEqualTo.getAttribute() );
+				getBeanByOid(persistenceKey, beanClass, oidEqualTo.getAttribute() );
 			
 			if(bean==null) {
 				if(log.isLoggable(Level.INFO))
@@ -1016,6 +1072,9 @@ public class Dash {
 				cachePool.clear();
 				cacheByBeanType.clear();
 			}
+			synchronized(weakBeanCache) {
+				weakBeanCache.clear();
+			}
 		} finally {
 			Logger log = getLog();
 			if(log.isLoggable(Level.INFO))
@@ -1051,6 +1110,10 @@ public class Dash {
 				size = cache.size();
 				cache.clear();
 				return size;
+			}
+			
+			synchronized(weakBeanCache) {
+				//TODO: also address weakBeanCache
 			}
 			return 0;
 		} finally {

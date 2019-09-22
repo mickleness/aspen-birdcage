@@ -144,7 +144,7 @@ class DashInvocationHandler implements InvocationHandler {
 		if(method_getBeanByOid.equals(method)) {
 			// we don't benefit from intercepting this method, but it is helpful in debugging logs
 			// to confirm which methods we're able to absorb without consulting the parent broker
-			X2BaseBean bean = Dash.getBeanFromGlobalCache(broker.getPersistenceKey(), (Class) args[0], (String) args[1]);
+			X2BaseBean bean = dash.getBeanByOid(broker.getPersistenceKey(), (Class) args[0], (String) args[1]);
 			if(bean!=null)
 				return bean;
 		} else if (method_getIteratorByQuery.equals(method)
