@@ -126,7 +126,7 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 		if(queryIterator!=null) {
 			if(queryIterator.hasNext()) {
 				X2BaseBean bean = queryIterator.next();
-				dash.cacheBeanLocal(bean);
+				dash.weakReferenceCache.storeBean(bean);
 				beans.add(bean);
 			}
 			if(!queryIterator.hasNext()) {

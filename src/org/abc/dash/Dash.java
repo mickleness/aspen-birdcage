@@ -201,20 +201,24 @@ public class Dash {
 		X2ObjectCache x2cache = AppGlobals.getCache(persistenceKey);
 
 		if (beanClass == null) {
-			String prefix = beanOid.substring(0, Math.min(3, beanOid.length()));
-			BeanTablePath btp = BeanTablePath.getTableByName(prefix
-					.toUpperCase());
-			if (btp == null)
-				throw new IllegalArgumentException(
-						"Could not determine bean class for \"" + beanOid
-								+ "\".");
-			beanClass = btp.getBeanType();
+			beanClass = getBeanTypeFromOid(beanOid);
 		}
 
 		Identity identity = new Identity(beanClass, beanClass,
 				new Object[] { beanOid });
 		X2BaseBean bean = (X2BaseBean) x2cache.lookup(identity);
 		return bean;
+	}
+
+	public static Class<?> getBeanTypeFromOid(String beanOid) {
+		String prefix = beanOid.substring(0, Math.min(3, beanOid.length()));
+		BeanTablePath btp = BeanTablePath.getTableByName(prefix
+				.toUpperCase());
+		if (btp == null)
+			throw new IllegalArgumentException(
+					"Could not determine bean class for \"" + beanOid
+							+ "\".");
+		return btp.getBeanType();
 	}
 
 	/**
@@ -291,9 +295,14 @@ public class Dash {
 			 */
 			HIT_FROM_OID,
 			/**
-			 * 
+			 * This indicates a bean was retrieved from a cache of weakly reference beans. (This is only
+			 * attempted when the global app's cache fails.)
 			 */
-			HIT_REFERENCE_BASED_CACHE;
+			HIT_REFERENCE_BASED_CACHE,
+			/**
+			 * This indicates a bean was retrieved from the Aspen's global cache based on its oid.
+			 */
+			HIT_APP_GLOBAL_CACHE;
 		}
 		
 		protected Map<Type, AtomicLong> matches = new HashMap<>();
@@ -500,13 +509,13 @@ public class Dash {
 	protected Cache<ProfileKey, TemplateQueryProfile> profiles;
 	protected CacheResults cacheResults = new CacheResults();
 	protected Map<Class<?>, Cache<CacheKey, List<String>>> cacheByBeanType = new HashMap<>();
-	protected Map<String, WeakReference<X2BaseBean>> weakBeanCache = new HashMap<>();
 	
 	private Logger log = Logger.getAnonymousLogger();
 	private ThreadLocal<Logger> logByThread = new ThreadLocal<>();
 	
 	protected Collection<Class> modifiedBeanTypes = new HashSet<>();
 	protected UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
+	protected WeakReferenceBeanCache weakReferenceCache = new WeakReferenceBeanCache();
 	
 	/**
 	 * Create a new Dash that keeps up to 5,0000 elements in the cache for up to 5 minutes.
@@ -540,34 +549,6 @@ public class Dash {
 		getLog().setLevel(Level.OFF);
 	}
 	
-	ReferenceQueue<X2BaseBean> localReferenceQueue = new ReferenceQueue<>();
-	public X2BaseBean getBeanFromLocalCache(String oid) {
-		synchronized(weakBeanCache) {
-			int removedRefs = 0;
-			while(localReferenceQueue.poll()!=null) {
-				removedRefs++;
-			}
-			if(removedRefs>0) {
-				Iterator<Entry<String, WeakReference<X2BaseBean>>> iter = weakBeanCache.entrySet().iterator();
-				while(iter.hasNext() && removedRefs>0) {
-					Entry<String, WeakReference<X2BaseBean>> entry = iter.next();
-					WeakReference<X2BaseBean> ref = entry.getValue();
-					if(ref.isEnqueued() || ref.get() == null) {
-						iter.remove();
-						removedRefs--;
-					}
-				}
-			}
-				
-			WeakReference<X2BaseBean> beanRef = weakBeanCache.get(oid);
-			if(beanRef==null)
-				return null;
-			X2BaseBean bean = beanRef.get();
-			if(bean==null)
-				weakBeanCache.remove(oid);
-			return bean;
-		}
-	}
 	
 	public X2BaseBean getBeanByOid(PersistenceKey persistenceKey, Class beanClass,String beanOid) {
 		Logger log = getLog();
@@ -575,11 +556,12 @@ public class Dash {
 		if(bean!=null) {
 			if(log.isLoggable(Level.INFO))
 				log.info("global cache resolved "+beanOid);
+			cacheResults.increment(CacheResults.Type.HIT_APP_GLOBAL_CACHE);
 		} else {
-			bean = getBeanFromLocalCache(beanOid);
+			bean = weakReferenceCache.getBeanByOid(beanClass, beanOid);
 			if(bean!=null) {
 				if(log.isLoggable(Level.INFO))
-					log.info("local cache resolved "+beanOid);
+					log.info("weak references resolved "+beanOid);
 				cacheResults.increment(CacheResults.Type.HIT_REFERENCE_BASED_CACHE);
 			} else {
 				if(log.isLoggable(Level.INFO))
@@ -795,7 +777,7 @@ public class Dash {
 			int maxSize = getMaxOidListSize(false, request.beanQuery);
 			while(iter.hasNext() && ctr<maxSize) {
 				X2BaseBean bean = (X2BaseBean) iter.next();
-				cacheBeanLocal(bean);
+				weakReferenceCache.storeBean(bean);
 				beansToReturn.add(bean);
 				ctr++;
 			}
@@ -900,7 +882,7 @@ public class Dash {
 		int maxSize = getMaxOidListSize(removedOperators>0, ourQuery);
 		while(iter.hasNext() && ctr<maxSize) {
 			X2BaseBean bean = (X2BaseBean) iter.next();
-			cacheBeanLocal(bean);
+			weakReferenceCache.storeBean(bean);
 			knownBeans.add(bean);
 			ctr++;
 		}
@@ -954,12 +936,6 @@ public class Dash {
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations for "+request);
 			return new BasicEntry<>(dashIter, CacheResults.Type.MISS);
-		}
-	}
-	
-	protected void cacheBeanLocal(X2BaseBean bean) {
-		synchronized(weakBeanCache) {
-			weakBeanCache.put(bean.getOid(), new WeakReference<>(bean, localReferenceQueue));
 		}
 	}
 	
@@ -1094,9 +1070,7 @@ public class Dash {
 				cachePool.clear();
 				cacheByBeanType.clear();
 			}
-			synchronized(weakBeanCache) {
-				weakBeanCache.clear();
-			}
+			weakReferenceCache.clear();
 		} finally {
 			Logger log = getLog();
 			if(log.isLoggable(Level.INFO))
@@ -1134,9 +1108,7 @@ public class Dash {
 				return size;
 			}
 			
-			synchronized(weakBeanCache) {
-				//TODO: also address weakBeanCache
-			}
+			weakReferenceCache.clear(beanType);
 			return 0;
 		} finally {
 			Logger log = getLog();
