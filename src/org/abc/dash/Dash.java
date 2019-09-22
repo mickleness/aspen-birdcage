@@ -489,7 +489,8 @@ public class Dash {
 	private ThreadLocal<Logger> logByThread = new ThreadLocal<>();
 	
 	protected Collection<Class> modifiedBeanTypes = new HashSet<>();
-
+	protected UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
+	
 	/**
 	 * Create a new Dash that keeps up to 5,0000 elements in the cache for up to 5 minutes.
 	 */
@@ -1143,8 +1144,6 @@ public class Dash {
 		}
 		
 	};
-	
-	UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
 	
 	/**
 	 * Return the UncaughtExceptionHandler. The default handler writes the stack trace to the AppGlobals log.
