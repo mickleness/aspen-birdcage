@@ -3,8 +3,6 @@ package org.abc.dash;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.Thread.UncaughtExceptionHandler;
-import java.lang.ref.ReferenceQueue;
-import java.lang.ref.WeakReference;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
@@ -18,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
@@ -53,10 +52,10 @@ import com.x2dev.utils.StringUtils;
  * The Dash object maintains a cache and a set of shared methods/tools
  * that one or more BrokerDashes can use.
  * <p>
- * Assuming you create a unique X2Broker for each thread: it is safe to
- * use one common Dash object to convert your X2Broker (presumably a ModelBroker)
- * to a BrokerDash. All of these BrokerDashes will read from and write to
- * the same cache.
+ * This class is thread-safe. So you can set up one Dash object and use it
+ * across multiple threads. For example: if you set up n-many threads and 
+ * each thread has a unique X2Broker, then the same Dash object can convert
+ * that broker into a caching BrokerDash.
  */
 @Tool(name = "Dash Caching Model", id = "DASH-CACHE", type="Procedure")
 public class Dash {
@@ -298,14 +297,19 @@ public class Dash {
 			 * This indicates a bean was retrieved from a cache of weakly reference beans. (This is only
 			 * attempted when the global app's cache fails.)
 			 */
-			HIT_REFERENCE_BASED_CACHE,
+			OID_HIT_REFERENCE,
 			/**
 			 * This indicates a bean was retrieved from the Aspen's global cache based on its oid.
 			 */
-			HIT_APP_GLOBAL_CACHE;
+			OID_HIT_ASPEN,
+			/**
+			 * This indicates we tried to look up a bean by its oid but failed.
+			 */
+			OID_MISS;
 		}
 		
-		protected Map<Type, AtomicLong> matches = new HashMap<>();
+		//sort keys alphabetically so all CacheResults follow same pattern
+		protected Map<Type, AtomicLong> matches = new TreeMap<>();
 
 		/**
 		 * Increment the counter for a given type of result.
@@ -365,6 +369,8 @@ public class Dash {
 					sb.append(",\n  "+entry.getKey()+"="+entry.getValue());
 				}
 			}
+			if(sb.length()==0)
+				sb.append("CacheResults[");
 			sb.append("]");
 			return sb.toString();
 		}
@@ -515,7 +521,7 @@ public class Dash {
 	
 	protected Collection<Class> modifiedBeanTypes = new HashSet<>();
 	protected UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
-	protected WeakReferenceBeanCache weakReferenceCache = new WeakReferenceBeanCache();
+	protected WeakReferenceBeanCache weakReferenceCache;
 	
 	/**
 	 * Create a new Dash that keeps up to 5,0000 elements in the cache for up to 5 minutes.
@@ -547,6 +553,7 @@ public class Dash {
 		this.persistenceKey = persistenceKey;
 		profiles = new Cache<>(cachePool);
 		getLog().setLevel(Level.OFF);
+		weakReferenceCache = new WeakReferenceBeanCache(this);
 	}
 	
 	
@@ -556,16 +563,17 @@ public class Dash {
 		if(bean!=null) {
 			if(log.isLoggable(Level.INFO))
 				log.info("global cache resolved "+beanOid);
-			cacheResults.increment(CacheResults.Type.HIT_APP_GLOBAL_CACHE);
+			cacheResults.increment(CacheResults.Type.OID_HIT_ASPEN);
 		} else {
 			bean = weakReferenceCache.getBeanByOid(beanClass, beanOid);
 			if(bean!=null) {
 				if(log.isLoggable(Level.INFO))
 					log.info("weak references resolved "+beanOid);
-				cacheResults.increment(CacheResults.Type.HIT_REFERENCE_BASED_CACHE);
+				cacheResults.increment(CacheResults.Type.OID_HIT_REFERENCE);
 			} else {
 				if(log.isLoggable(Level.INFO))
 					log.info("no cache resolved "+beanOid);
+				cacheResults.increment(CacheResults.Type.OID_MISS);
 			}
 		}
 		return bean;
@@ -1215,7 +1223,7 @@ public class Dash {
 	 * @param ueh the new UncaughtExceptionHandler. If this is null then an empty UncaughtExceptionHandler is used (that does nothing).
 	 */
 	public void setUncaughtExceptionHandler(UncaughtExceptionHandler ueh) {
-		if(ueh==null) ueh = NULL_UNCAUGHT_EXCEPTION_HANDLER;;
+		if(ueh==null) ueh = NULL_UNCAUGHT_EXCEPTION_HANDLER;
 		uncaughtExceptionHandler = ueh;
 	}
 	
