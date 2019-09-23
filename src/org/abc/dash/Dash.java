@@ -257,42 +257,42 @@ public class Dash {
 		 */
 		public enum Type {
 			/**
-			 * This indicates caching wasn't attempted.
+			 * This indicates caching wasn't attempted for a bean query.
 			 */
-			SKIP, 
+			QUERY_SKIP, 
 			/**
 			 * This indicates caching turned up an exact match and no database query was issued.
 			 */
-			HIT, 
+			QUERY_HIT, 
 			/**
 			 * This indicates the Dash caching layer identified the required bean oids, and we replaced the original query with an oid-based query.
 			 */
-			REDUCED_QUERY_TO_OIDS,
+			QUERY_REDUCED_TO_OIDS,
 			/**
 			 * This indicates we gave up on caching because we had too many beans.
 			 */
-			ABORT_TOO_MANY,
+			QUERY_MISS_ABORT_TOO_MANY,
 			/**
 			 * This indicates the cache was consulted but didn't have a match.
 			 */
-			MISS,
+			QUERY_MISS,
 			/**
 			 * This indicates we were able to partially uncache some of the required beans, and we replaced the original query to identify the remaining beans.
 			 */
-			REDUCED_QUERY_FROM_SPLIT, 
+			QUERY_REDUCED_FROM_SPLIT, 
 			/**
 			 * This indicates our cache layer was able to resolve the query by splitting it and resolving its split elements.
 			 */
-			HIT_FROM_SPLIT,
+			QUERY_HIT_FROM_SPLIT,
 			/**
 			 * This indicates caching wasn't attempted because a Criteria couldn't be converted to an Operator.
 			 * (This is probably because a criteria contained a subquery, or some other unsupported feature).
 			 */
-			SKIP_UNSUPPORTED,
+			QUERY_SKIP_UNSUPPORTED,
 			/**
 			 * This unusual case indicates that an oid was directly embedded in the query (possibly with other query criteria)
 			 */
-			HIT_FROM_OID,
+			QUERY_HIT_FROM_OID,
 			/**
 			 * This indicates a bean was retrieved from a cache of weakly reference beans. (This is only
 			 * attempted when the global app's cache fails.)
@@ -622,7 +622,7 @@ public class Dash {
 			if(log.isLoggable(Level.INFO))
 				log.info("skipping for non-bean-query: "+beanQuery);
 			// the DashInvocationHandler won't even call this method if isBeanQuery(..)==false
-			cacheResults.increment(CacheResults.Type.SKIP_UNSUPPORTED);
+			cacheResults.increment(CacheResults.Type.QUERY_SKIP_UNSUPPORTED);
 			return broker.getIteratorByQuery(beanQuery);
 		}
 
@@ -632,7 +632,7 @@ public class Dash {
 		} catch(Exception e) {
 			//this Criteria can't be converted to an Operator, so we should give up:
 
-			cacheResults.increment(CacheResults.Type.SKIP_UNSUPPORTED);
+			cacheResults.increment(CacheResults.Type.QUERY_SKIP_UNSUPPORTED);
 			return broker.getIteratorByQuery(beanQuery);
 		}
 		
@@ -707,7 +707,7 @@ public class Dash {
 			if(log.isLoggable(Level.INFO))
 				log.info("aborting to default broker");
 			iter = new QueryIteratorDash(this, null, iter);
-			return new BasicEntry<>(iter, CacheResults.Type.SKIP);
+			return new BasicEntry<>(iter, CacheResults.Type.QUERY_SKIP);
 		}
 		
 		Cache<CacheKey, List<String>> cache = getCache(request.beanQuery.getBaseClass(), true);
@@ -721,7 +721,7 @@ public class Dash {
 				QueryIterator dashIter = new QueryIteratorDash(this, beans);
 				if(log.isLoggable(Level.INFO))
 					log.info("found "+beans.size()+" beans for "+request);
-				return new BasicEntry<>(dashIter, CacheResults.Type.HIT);
+				return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_HIT);
 			}
 			
 			// We know the exact oids, but those beans aren't in Aspen's cache 
@@ -737,7 +737,7 @@ public class Dash {
 			if(log.isLoggable(Level.INFO))
 				log.info("found "+beanOids.size()+" bean oids for "+request);
 			
-			return new BasicEntry<>(dashIter, CacheResults.Type.REDUCED_QUERY_TO_OIDS);
+			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_REDUCED_TO_OIDS);
 		}
 		
 		// we couldn't retrieve the entire query results from our cache
@@ -773,7 +773,7 @@ public class Dash {
 				QueryIterator dashIter = new QueryIteratorDash(this, returnValue);
 				if(log.isLoggable(Level.INFO))
 					log.info("filtered "+returnValue.size()+" bean oids for "+request);
-				return new BasicEntry<>(dashIter, CacheResults.Type.HIT_FROM_OID);
+				return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_HIT_FROM_OID);
 			}
 		}
 
@@ -795,7 +795,7 @@ public class Dash {
 				QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn, iter);
 				if(log.isLoggable(Level.INFO))
 					log.info("query gave up after "+ctr+" iterations for "+request);
-				return new BasicEntry<>(dashIter, CacheResults.Type.ABORT_TOO_MANY);
+				return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS_ABORT_TOO_MANY);
 			}
 			
 			// We have all the beans. Cache the oids for next time and return.
@@ -809,7 +809,7 @@ public class Dash {
 			QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn);
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.MISS);
+			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS);
 		}
 		
 		// We're going to try splitting the operator.
@@ -863,7 +863,7 @@ public class Dash {
 			QueryIterator dashIter = new QueryIteratorDash(this, knownBeans);
 			if(log.isLoggable(Level.INFO))
 				log.info("collection "+knownBeans.size()+" split beans for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.HIT_FROM_SPLIT);
+			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_HIT_FROM_SPLIT);
 		} else if(removedOperators>0) {
 			// we resolved *some* operators, but not all of them.
 			Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
@@ -900,7 +900,7 @@ public class Dash {
 			QueryIterator dashIter = new QueryIteratorDash(this, knownBeans, iter);
 			if(log.isLoggable(Level.INFO))
 				log.info("gave up after "+ctr+" iterations for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.ABORT_TOO_MANY);
+			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS_ABORT_TOO_MANY);
 		}
 		
 		// we have all the beans; now we just have to stores things in our cache for next time
@@ -939,11 +939,11 @@ public class Dash {
 		if(removedOperators > 0) {
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations (with "+removedOperators+" cached split queries) for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.REDUCED_QUERY_FROM_SPLIT);
+			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_REDUCED_FROM_SPLIT);
 		} else {
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.MISS);
+			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS);
 		}
 	}
 	
