@@ -12,4 +12,8 @@ public interface BrokerDash extends X2Broker {
 	 * Multiple BrokerDashes may share the same Dash instance.
 	 */
 	Dash getDash();
+
+	void setDashActive(boolean active);
+	
+	boolean isDashActive();
 }

@@ -7,7 +7,9 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -308,8 +310,13 @@ public class Dash {
 			OID_MISS;
 		}
 		
-		//sort keys alphabetically so all CacheResults follow same pattern
-		protected Map<Type, AtomicLong> matches = new TreeMap<>();
+		//sort keys alphabetically so all CacheResults all follow same pattern
+		protected Map<Type, AtomicLong> matches = new TreeMap<>(new Comparator<Type>() {
+			@Override
+			public int compare(Type o1, Type o2) {
+				return o1.name().compareTo(o2.name());
+			}
+		});
 
 		/**
 		 * Increment the counter for a given type of result.
@@ -1103,6 +1110,10 @@ public class Dash {
 			modifiedBeanTypes.add(beanType);
 		}
 		clearCache(beanType);
+		
+		Logger log = getLog();
+		if(log.isLoggable(Level.INFO))
+			log.info(beanType.getName());
 	}
 	
 	public int clearCache(Class beanType) {
@@ -1234,15 +1245,31 @@ public class Dash {
 	 * this factory's ThreadPool then the argument is returned as-is.
 	 */
 	public BrokerDash convertToBrokerDash(X2Broker broker) {
+		return convertToBrokerDash(broker, true);
+	}
+	
+	/**
+	 * Create a BrokerDash that uses this factory's CachePool.
+	 * <p>
+	 * It is safe to call this method redundantly. If the argument already uses
+	 * this factory's ThreadPool then the argument is returned as-is.
+	 * <p>
+	 * @param active this toggles the dash caching logic on/off.
+	 */
+	public BrokerDash convertToBrokerDash(X2Broker broker, boolean active) {
 		validatePersistenceKey(broker.getPersistenceKey());
 		
 		if (broker instanceof BrokerDash) {
 			BrokerDash bd = (BrokerDash) broker;
 			Dash sharedResource = bd.getDash();
-			if (sharedResource == this)
+			if (sharedResource == this) {
+				bd.setDashActive(active);
 				return bd;
+			}
 		}
-		return createBrokerDash(broker);
+		BrokerDash returnValue = createBrokerDash(broker);
+		returnValue.setDashActive(active);
+		return returnValue;
 	}
 
 	private void validatePersistenceKey(PersistenceKey otherPersistenceKey) {
@@ -1314,6 +1341,10 @@ public class Dash {
 		for(Class c : z) {
 			clearCache(c);
 		}
+
+		Logger log = getLog();
+		if(log.isLoggable(Level.INFO))
+			log.info(Arrays.asList(z).toString());
 	}
 
 	public PersistenceKey getPersistenceKey() {
