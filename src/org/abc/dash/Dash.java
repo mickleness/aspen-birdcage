@@ -20,7 +20,11 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,6 +35,7 @@ import org.apache.commons.beanutils.PropertyUtils;
 import org.apache.ojb.broker.Identity;
 import org.apache.ojb.broker.metadata.FieldHelper;
 import org.apache.ojb.broker.query.Criteria;
+import org.apache.ojb.broker.query.Query;
 import org.apache.ojb.broker.query.QueryByCriteria;
 
 import com.follett.fsc.core.framework.persistence.BeanQuery;
@@ -39,7 +44,9 @@ import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.beans.path.BeanTablePath;
+import com.follett.fsc.core.k12.business.ModelBroker;
 import com.follett.fsc.core.k12.business.ModelProperty;
+import com.follett.fsc.core.k12.business.PrivilegeSet;
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.web.AppGlobals;
 import com.pump.data.operator.And;
@@ -48,6 +55,7 @@ import com.pump.data.operator.Operator;
 import com.pump.data.operator.OperatorContext;
 import com.pump.util.Cache;
 import com.pump.util.Cache.CachePool;
+import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.StringUtils;
 
 /**
@@ -61,6 +69,308 @@ import com.x2dev.utils.StringUtils;
  */
 @Tool(name = "Dash Caching Model", id = "DASH-CACHE", type="Procedure")
 public class Dash {
+	
+	public static interface BrokerIteratorFunction<Input, Output> {
+		public Output apply(X2Broker broker,Input input);
+	}
+	
+	/**
+	 * This iterates over a query and passes the query results to separate threads to speed up processing.
+	 *
+	 * @param <Input> the results of the Query, which are passed to separate threads to be evaluated in a QueryIteratorFunction
+	 * @param <Output> the output of a QueryIteratorFunction, which is passed back to the original thread for possible consumption.
+	 */
+	public static class ThreadedIteratorHelper<Input, Output> {
+		
+		/**
+		 * This is one of the helper threads that listens for inputs and applies the function.
+		 * <p>
+		 * Helper threads need to be 100% sure they will exit. (We don't want hundreds of orphaned threads
+		 * on the server someday.) This thread has three possible conditions under which it will exit:
+		 * <ul><li>When completedIterator is toggled from false to true. This is the ideal/typical option.</li>
+		 * <li>When {@link #isPollTimeout(long)} indicates grabbing a new Input off the queue has 
+		 * taken too long. This generally shouldn't happen unless something else is frozen/blocked. If all helper 
+		 * threads shut down because something just naturally took a VERY long time to complete, then the 
+		 * ThreadedIteratorHelper will also eventually shut down when it times out after attempting to pass
+		 * Inputs off to the helper threads.</li>
+		 * <li>When the original tool's thread is no longer alive. This is considered a fail-safe. This
+		 * should never be needed, because the completedIterator boolean should be safely changed inside
+		 * a finally block.</li></ul>
+		 * <p>
+		 */
+		class HelperThread extends Thread {
+			Thread masterThread;
+			
+			public HelperThread(int index) {
+				super(Thread.currentThread().getName()+"-helper-"+index);
+				masterThread = Thread.currentThread();
+			}
+
+			@Override
+        	public void run() {
+				long lastInput = System.currentTimeMillis();
+				boolean keepRunning = true;
+				boolean inputQueueStoppedAcceptingAdditions = false;
+        		while(keepRunning) {
+        			try {
+            			if(!masterThread.isAlive()) {
+        					keepRunning = false;
+	        				throw new RuntimeException("Aborting "+getName()+" because the master thread ("+masterThread.getName()+") is not alive.");
+            			}
+            			
+            			// I originally tried calls like inputQueue.poll(50, TimeUnit.MILLIS), but for some reason
+            			// when I used those calls and killed the master tool: this helper thread seemed to get
+            			// locked and never recover. I didn't figure out exactly why, but switching to this
+            			// poll() method appeared to resolve it:
+            			Input input = inputQueue.poll();
+	        			
+	        			if(input!=null) {
+	        				lastInput = System.currentTimeMillis();
+		        			Output output = function.apply(createBroker(), input);
+		        			if(output!=null) {
+			        			synchronized(outputQueue) {
+			        				outputQueue.add(output);
+			        			}
+		        			}
+	        			} else {
+	        				if(inputQueueStoppedAcceptingAdditions) {
+	        					// First we noticed completedIterator is true, then we 
+	        					// drained the inputQueue. We can end this thread now.
+	        					return;
+	        				}
+	        				
+	        				long elapsed = System.currentTimeMillis() - lastInput;
+	        				if(isPollTimeout(elapsed)) {
+	        					keepRunning = false;
+		        				throw new RuntimeException("Unexpectedly slow input queue: "+elapsed+" ms");
+	        				}
+	        				
+	        				if(completedIterator.get()) {
+	        					inputQueueStoppedAcceptingAdditions = true;
+	        				}
+	        			}
+        			} catch(Exception e) {
+        				handleUncaughtException(e);
+        			}
+        		}
+        	}
+		}
+		
+		PrivilegeSet privilegeSet;
+		BrokerIteratorFunction<Input, Output> function;
+		Consumer<Output> outputListener;
+        ArrayBlockingQueue<Input> inputQueue;
+        Dash dash;
+        int threadCount;
+        List<Output> outputQueue = new LinkedList<>();
+        AtomicBoolean completedIterator = new AtomicBoolean(false);
+        Thread[] threads;
+
+        /**
+         * Create a new ThreadedIteratorHelper.
+         * 
+		 * @param privilegeSet a PrivilegeSet used to create additional ModelBrokers.
+		 * @param function a function that accepts the query's iterative values and produces output. This function
+		 *        will probably be called on helper threads, but if threadCount is 0 then this function will be called
+		 *        on this thread. The broker this function receives as an argument will always be a new (unused)
+		 *        X2Broker. It is the function's responsibility to set up transactions appropriately.
+		 * @param threadCount the number of threads to use to evaluate this query's results. This must be zero or greater.
+		 * Each thread can have a unique X2Broker, and each broker can borrow a database connection: so think of this number
+		 * as approximately equal to the number of database connections you want to have active at any give time.
+		 * If this is zero then the iterator results are processed immediately and no new threads are created.
+		 * @param dash if this is non-null then all new X2Brokers this manager creates will be converted to BrokerDash's so they
+		 * may benefit from caching.
+		 * @param outputConsumer an optional consumer. If this is non-null, then this consumer is given all the Outputs the
+		 * function creates. The consumer is only notified on the master thread that originally invoked this method.
+         */
+		public ThreadedIteratorHelper(PrivilegeSet privilegeSet,
+				BrokerIteratorFunction<Input, Output> function, 
+				int threadCount,Dash dash,Consumer<Output> outputListener) {
+			Objects.requireNonNull(dash);
+			Objects.requireNonNull(privilegeSet);
+			Objects.requireNonNull(function);
+			if(!(threadCount>=0))
+				throw new IllegalArgumentException("threadCount ("+threadCount+") must be at least zero");
+			this.privilegeSet = privilegeSet;
+			this.function = function;
+			this.dash = dash;
+			this.threadCount = threadCount;
+			inputQueue = threadCount>0 ? new ArrayBlockingQueue<Input>(threadCount*2) : null;
+			threads = new Thread[threadCount];
+			for(int a = 0; a<threads.length; a++) {
+				threads[a] = new HelperThread(a);
+				threads[a].start();
+			}
+			this.outputListener = outputListener;
+		}
+		
+		/**
+		 * Execute the input query.
+		 * <p>
+		 * This should be called from a tool's primary thread.
+		 * 
+		 * @param broker the original (master) broker used to iterate over the input query.
+		 * @param query the query to pass to the broke.
+		 */
+		public void run(X2Broker broker, Query query) {
+			Objects.requireNonNull(broker);
+			Objects.requireNonNull(query);
+			
+			if(completedIterator.get())
+				throw new IllegalStateException("The run() method should only be invoked once.");
+			
+			QueryIterator iter = broker.getIteratorByQuery(query);
+			run(iter);
+		}
+		
+		/**
+		 * Iterate over all the elements in an iterator.
+		 * <p>
+		 * This should be called from a tool's primary thread.
+		 * 
+		 * @param iter the iterator to walk through. If this is an AutoCloseable then it is
+		 * automatically closed on completion.
+		 */
+		public synchronized void run(Iterator iter) {
+			if(completedIterator.get())
+				throw new IllegalStateException("The run() method should only be invoked once.");
+			
+			try(AutoCloseable z = getAutoCloseable(iter)) {
+				int elementCtr = 0;
+				while(iter.hasNext()) {
+					Input value = (Input) iter.next();
+					
+					if(inputQueue==null) {
+						Output output = function.apply(createBroker(), value);
+						if(output!=null)
+							outputQueue.add(output);
+					} else {
+		        		long t = System.currentTimeMillis();
+		        		while(true) {
+		        			long elapsed = System.currentTimeMillis() - t;
+		        			if(isSubmitTimeout(elapsed))
+		        				throw new RuntimeException("Unexpectedly slow queue: "+elapsed+" ms, elementCtr = "+elementCtr);
+		        			try {
+			        			if(inputQueue.offer( value, 5, TimeUnit.SECONDS))
+			        				break;
+		        			} catch(InterruptedException e) {
+		        				//intentionally empty
+		        			}
+		        		}
+					}
+					
+					flushOutputs();
+	        		
+	        		elementCtr++;
+				}
+			} catch(RuntimeException e) {
+				throw e;
+			} catch(Exception e) {
+				handleUncaughtException(e);
+			} finally {
+				completedIterator.set(true);
+			}
+			
+			//let our helper threads drain the input queue:
+			
+			while(getHelperThreadCount()>0) {
+				Thread.yield();
+			}
+			flushOutputs();
+		}
+		
+		/**
+		 * This either casts the argument to an AutoCloseable, or it creates a dummy AutoCloseable.
+		 */
+		private AutoCloseable getAutoCloseable(Iterator iter) {
+			if(iter instanceof AutoCloseable) {
+				return (AutoCloseable) iter;
+			}
+			return new AutoCloseable() {
+
+					@Override
+					public void close() {}
+			};
+		}
+		
+		/**
+		 * Create a new X2Broker.
+		 * <p>
+		 * First this creates a ModelBroker using the master PrivilegeSet.
+		 * Then if this object's constructor included a Dash argument then that is used to create a DashBroker.
+		 */
+		protected X2Broker createBroker() {
+			X2Broker newBroker = new ModelBroker(privilegeSet);
+			if(dash!=null)
+				newBroker = dash.convertToBrokerDash(newBroker);
+			return newBroker;
+		}
+		
+		private void flushOutputs() {
+			Object[] outputArray;
+			synchronized(outputQueue) {
+				outputArray = outputQueue.toArray();
+				outputQueue.clear();
+			}
+			if(outputListener!=null) {
+				for(int a = 0; a<outputArray.length; a++) {
+					try {
+						outputListener.accept( (Output) outputArray[a]);
+					} catch(Exception e) {
+						handleUncaughtException(e);
+					}
+				}
+			}
+		}
+		
+		/**
+		 * This method is notified if either the QueryIteratorFunction or the output Consumer throw an exception
+		 * while processing input/output.
+		 * <p>
+		 * If a Dash has been provided: the default implementation is to try to pass this to the Dash's UncaughtExceptionHandler.
+		 * If that is not possible: this prints a SEVERE message to the AppGlobal's log.
+		 */
+		protected void handleUncaughtException(Exception e) {
+			if(dash!=null) {
+				UncaughtExceptionHandler ueh = dash.getUncaughtExceptionHandler();
+				if(ueh!=null) {
+					ueh.uncaughtException(Thread.currentThread(), e);
+					return;
+				}
+			}
+			AppGlobals.getLog().log(Level.SEVERE, LoggerUtils.convertThrowableToString(e));
+		}
+		
+		/**
+		 * Return the number of milliseconds a consumer thread will wait for new Input before throwing an exception.
+		 * The default value of 10 minutes.
+		 */
+		protected boolean isPollTimeout(long elapsedMillis) {
+			return elapsedMillis > 1000*60*10;
+		}
+		
+		/**
+		 * Return the number of milliseconds the master thread will wait for a consumer thread to become available.
+		 * The default value is 10 minutes.
+		 */
+		protected boolean isSubmitTimeout(long elapsedMillis) {
+			return elapsedMillis > 1000*60*10;
+		}
+		
+		/**
+		 * Return the number of active helper threads.
+		 * <p>
+		 * This is used during shutdown/cleanup to wait for all the consumer threads to exit.
+		 */
+		protected int getHelperThreadCount() {
+			int ctr = 0;
+			for(Thread thread : threads) {
+				if(thread.isAlive())
+					ctr++;
+			}
+			return ctr;
+		}
+	}
 
 	/**
 	 * This is an OperatorContext that connects Operators to X2BaseBeans.
@@ -530,6 +840,9 @@ public class Dash {
 	protected UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
 	protected WeakReferenceBeanCache weakReferenceCache;
 	
+	protected boolean isOidCachingActive = true;
+	protected boolean isQueryCachingActive = true;
+	
 	/**
 	 * Create a new Dash that keeps up to 5,0000 elements in the cache for up to 5 minutes.
 	 */
@@ -562,9 +875,45 @@ public class Dash {
 		getLog().setLevel(Level.OFF);
 		weakReferenceCache = new WeakReferenceBeanCache(this);
 	}
+
+	public boolean isOidCachingActive() {
+		return isOidCachingActive;
+	}
+
+	public boolean isQueryCachingActive() {
+		return isQueryCachingActive;
+	}
+
+	public boolean setOidCachingActive(boolean b) {
+		if(isOidCachingActive==b)
+			return false;
+		isOidCachingActive = b;
+		return true;
+	}
+
+	public boolean setQueryCachingActive(boolean b) {
+		if(isQueryCachingActive==b)
+			return false;
+		isQueryCachingActive = b;
+		return true;
+	}
 	
-	
+	/**
+	 * If {@link #isOidCachingActive()} is true then this attempts
+	 * to return the requested X2BaseBean without issuing a query.
+	 * <p>
+	 * First this consults Aspen's default cache. If that fails then
+	 * this consults Dash's local WeakReferenceBeanCache.
+	 * 
+	 * @param persistenceKey
+	 * @param beanClass
+	 * @param beanOid
+	 * @return
+	 */
 	public X2BaseBean getBeanByOid(PersistenceKey persistenceKey, Class beanClass,String beanOid) {
+		if(isOidCachingActive()==false)
+			return null;
+		
 		Logger log = getLog();
 		X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanClass, beanOid);
 		if(bean!=null) {
@@ -605,7 +954,8 @@ public class Dash {
 	}
 
 	/**
-	 * Create a QueryIterator for a QueryByCriteria.
+	 * Create a QueryIterator for a QueryByCriteria. If {@link #isQueryCachingActive()}
+	 * returns false then this immediately lets the broker create the default QueryIterator.
 	 * <p>
 	 * In an ideal case: this will use cached data to completely avoid making a
 	 * database query.
@@ -622,6 +972,9 @@ public class Dash {
 	 */
 	@SuppressWarnings({ "rawtypes" })
 	public QueryIterator createQueryIterator(X2Broker broker,QueryByCriteria beanQuery) {
+		if(!isQueryCachingActive())
+			return broker.getIteratorByQuery(beanQuery);
+		
 		validatePersistenceKey(broker.getPersistenceKey());
 		
 		Logger log = getLog();
@@ -1350,5 +1703,48 @@ public class Dash {
 	public PersistenceKey getPersistenceKey() {
 		return persistenceKey;
 	}
+	
+	/**
+	 * Iterate over a query and process the results separately in additional threads.
+	 * 
+	 * @param broker the broker that should be used to execute the query (on this thread)
+	 * @param query the query to iterate over.
+	 * @param privilegeSet a PrivilegeSet used to create additional ModelBrokers.
+	 * @param function a function that accepts the query's iterative values and produces output. This function
+	 *        will probably be called on helper threads, but if threadCount is 0 then this function will be called
+	 *        on this thread. The broker this function receives as an argument will always be a new (unused)
+	 *        X2Broker. It is the function's responsibility to set up transactions appropriately.
+	 * @param threadCount the number of threads to use to evaluate this query's results. This must be zero or greater.
+	 * Each thread can have a unique X2Broker, and each broker can borrow a database connection: so think of this number
+	 * as approximately equal to the number of database connections you want to have active at any give time.
+	 * If this is zero then the iterator results are processed immediately and no new threads are created.
+	 * @param outputConsumer an optional consumer. If this is non-null, then this consumer is given all the Outputs the
+	 * function creates. The consumer is only notified on the master thread that originally invoked this method.
+	 */
+	public <Input, Output> void iterateQueryWithFunction(X2Broker broker,Query query, PrivilegeSet privilegeSet, BrokerIteratorFunction<Input, Output> function, int threadCount, Consumer<Output> outputConsumer) {
+		ThreadedIteratorHelper<Input, Output> manager = new ThreadedIteratorHelper<>(privilegeSet, function, threadCount, this, outputConsumer);
+		manager.run(broker, query);
+	}
 
+	
+	/**
+	 * Iterate through all elements in an Iterator and process the results separately in additional threads.
+	 * 
+	 * @param iterator the Iterator to iterate over.
+	 * @param privilegeSet a PrivilegeSet used to create additional ModelBrokers.
+	 * @param function a function that accepts the query's iterative values and produces output. This function
+	 *        will probably be called on helper threads, but if threadCount is 0 then this function will be called
+	 *        on this thread. The broker this function receives as an argument will always be a new (unused)
+	 *        X2Broker. It is the function's responsibility to set up transactions appropriately.
+	 * @param threadCount the number of threads to use to evaluate this query's results. This must be zero or greater.
+	 * Each thread can have a unique X2Broker, and each broker can borrow a database connection: so think of this number
+	 * as approximately equal to the number of database connections you want to have active at any give time.
+	 * If this is zero then the iterator results are processed immediately and no new threads are created.
+	 * @param outputConsumer an optional consumer. If this is non-null, then this consumer is given all the Outputs the
+	 * function creates. The consumer is only notified on the master thread that originally invoked this method.
+	 */
+	public <Input, Output> void iterateQueryWithFunction(Iterator iterator, PrivilegeSet privilegeSet, BrokerIteratorFunction<Input, Output> function, int threadCount, Consumer<Output> outputConsumer) {
+		ThreadedIteratorHelper<Input, Output> manager = new ThreadedIteratorHelper<>(privilegeSet, function, threadCount, this, outputConsumer);
+		manager.run(iterator);
+	}
 }
