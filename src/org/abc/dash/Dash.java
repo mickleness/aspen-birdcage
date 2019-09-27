@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -75,7 +76,7 @@ public class Dash {
 		
 		public DashThreadedBrokerIterator(
 				PrivilegeSet privilegeSet,
-				ThreadedBrokerIterator.Function<Input, Output> function,
+				BiFunction<X2Broker, Input, Output> function,
 				int threadCount, Dash dash, Consumer<Output> outputListener) {
 			super(privilegeSet, function, threadCount, outputListener);
 			Objects.requireNonNull(dash);
@@ -695,9 +696,6 @@ public class Dash {
 	 */
 	@SuppressWarnings({ "rawtypes" })
 	public QueryIterator createQueryIterator(X2Broker broker,QueryByCriteria beanQuery) {
-		if(!isQueryCachingActive())
-			return broker.getIteratorByQuery(beanQuery);
-		
 		validatePersistenceKey(broker.getPersistenceKey());
 		
 		Logger log = getLog();
@@ -707,6 +705,13 @@ public class Dash {
 			// the DashInvocationHandler won't even call this method if isBeanQuery(..)==false
 			cacheResults.increment(CacheResults.Type.QUERY_SKIP_UNSUPPORTED);
 			return broker.getIteratorByQuery(beanQuery);
+		}
+		
+		if(!isQueryCachingActive()) {
+			//still use a QueryIteratorDash to automatically engage oid caching (if we can)
+			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
+			QueryIteratorDash dashIter = new QueryIteratorDash(this, null, iter);
+			return dashIter;
 		}
 
 		Operator operator;

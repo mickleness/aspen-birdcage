@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 
@@ -49,20 +50,6 @@ import com.x2dev.utils.LoggerUtils;
  * thread for consumption.
  */
 public class ThreadedBrokerIterator<Input, Output> {
-	
-	/**
-	 * This accepts elements from an Iterator.
-	 * <p>
-	 * Each call to this method has a new unique X2Broker. This method
-	 * will usually be called on a helper thread.
-	 *
-	 * @param <Input> an element from the Iterator.
-	 * @param <Output> an optional Output element this Function produces. 
-	 * (This may be null.)
-	 */
-	public interface Function<Input, Output> {
-		public Output apply(X2Broker broker,Input input);
-	}
 	
 	/**
 	 * This is one of the helper threads that listens for inputs and applies the function.
@@ -140,7 +127,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 	}
 	
 	protected PrivilegeSet privilegeSet;
-	protected Function<Input, Output> function;
+	protected BiFunction<X2Broker, Input, Output> function;
 	protected Consumer<Output> outputListener;
 	private ArrayBlockingQueue<Input> inputQueue;
 	protected int threadCount;
@@ -164,7 +151,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 * function creates. The consumer is only invoked on the master thread.
      */
 	public ThreadedBrokerIterator(PrivilegeSet privilegeSet,
-			Function<Input, Output> function, 
+			BiFunction<X2Broker, Input, Output> function, 
 			int threadCount,Consumer<Output> outputListener) {
 		Objects.requireNonNull(privilegeSet);
 		Objects.requireNonNull(function);

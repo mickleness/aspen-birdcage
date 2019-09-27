@@ -56,9 +56,13 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	
 	/**
 	 * Create an iterator that will walk through a collection of beans.
+	 * 
+	 * @param dash this is used to identify the persistence key and possibly to cache beans by their oid.
 	 */
 	public QueryIteratorDash(Dash dash,Collection<X2BaseBean> beans) {
 		this(dash, beans, null);
+		//if you use this constructor: you should give us something to iterate over
+		Objects.requireNonNull(beans);
 	}
 
 	/**
@@ -72,6 +76,7 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	 * with the SortedSet. (This assumes the QueryIterator will return results using the
 	 * same order-by rules that the SortedSet follows.)
 	 * 
+	 * @param dash this is used to identify the persistence key and possibly to cache beans by their oid.
 	 * @param beans an optional collection of beans to walk through. This may be null.
 	 * @param queryIterator the optional QueryIterator to walk through. This may be null.
 	 */

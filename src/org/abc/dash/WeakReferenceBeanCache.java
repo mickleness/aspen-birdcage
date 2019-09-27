@@ -58,9 +58,9 @@ public class WeakReferenceBeanCache {
 	 */
 	public void storeBean(X2BaseBean bean) {
 		
-		if(bean==null)
+		if(bean==null || !dash.isOidCachingActive())
 			return;
-
+		
 		synchronized(this) {
 			WeakValueMap<String, X2BaseBean> classCache = cache.get(bean.getClass());
 			if(classCache==null) {
