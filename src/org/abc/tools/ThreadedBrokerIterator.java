@@ -246,7 +246,9 @@ public class ThreadedBrokerIterator<Input, Output> {
 		
 		// we stopped adding things to our queue, but we need to make sure our helper threads addressed them all:
 		while(getActiveHelperThreadCount()>0) {
-			Thread.yield();
+			try {
+				Thread.sleep(10);
+			} catch(InterruptedException e) {}
 		}
 		
 		flushOutputs();
