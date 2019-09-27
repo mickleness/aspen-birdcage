@@ -708,7 +708,6 @@ public class Dash {
 		}
 		
 		if(!isQueryCachingActive()) {
-			//still use a QueryIteratorDash to automatically engage oid caching (if we can)
 			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
 			QueryIteratorDash dashIter = new QueryIteratorDash(this, null, iter);
 			return dashIter;
