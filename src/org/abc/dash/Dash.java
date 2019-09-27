@@ -6,6 +6,7 @@ import java.lang.Thread.UncaughtExceptionHandler;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -28,7 +29,6 @@ import java.util.logging.Logger;
 
 import org.abc.tools.ThreadedBrokerIterator;
 import org.abc.tools.Tool;
-import org.abc.util.BasicEntry;
 import org.abc.util.OrderByComparator;
 import org.apache.commons.beanutils.PropertyUtils;
 import org.apache.ojb.broker.Identity;
@@ -175,7 +175,7 @@ public class Dash {
 	 * This combines an Operator and a bean Class.
 	 * It is used as a key to identify TemplateQueryProfiles.
 	 */
-	public static class ProfileKey extends BasicEntry<Operator, Class<?>> {
+	public static class ProfileKey extends AbstractMap.SimpleEntry<Operator, Class<?>> {
 		private static final long serialVersionUID = 1L;
 
 		ProfileKey(Operator operator,Class<?> baseClass) {
@@ -187,7 +187,7 @@ public class Dash {
 	 * This combines an Operator, an OrderByComparator, and the isDistinct boolean.
 	 * It is used as a key to identify a List of oids.
 	 */
-	public static class CacheKey extends BasicEntry<Operator, OrderByComparator> {
+	public static class CacheKey extends AbstractMap.SimpleEntry<Operator, OrderByComparator> {
 		private static final long serialVersionUID = 1L;
 		
 		boolean isDistinct;
@@ -794,7 +794,7 @@ public class Dash {
 			if(log.isLoggable(Level.INFO))
 				log.info("aborting to default broker");
 			iter = new QueryIteratorDash(this, null, iter);
-			return new BasicEntry<>(iter, CacheResults.Type.QUERY_SKIP);
+			return new AbstractMap.SimpleEntry<>(iter, CacheResults.Type.QUERY_SKIP);
 		}
 		
 		Cache<CacheKey, List<String>> cache = getCache(request.beanQuery.getBaseClass(), true);
@@ -808,7 +808,7 @@ public class Dash {
 				QueryIterator dashIter = new QueryIteratorDash(this, beans);
 				if(log.isLoggable(Level.INFO))
 					log.info("found "+beans.size()+" beans for "+request);
-				return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_HIT);
+				return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_HIT);
 			}
 			
 			// We know the exact oids, but those beans aren't in Aspen's cache 
@@ -824,7 +824,7 @@ public class Dash {
 			if(log.isLoggable(Level.INFO))
 				log.info("found "+beanOids.size()+" bean oids for "+request);
 			
-			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_REDUCED_TO_OIDS);
+			return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_REDUCED_TO_OIDS);
 		}
 		
 		// we couldn't retrieve the entire query results from our cache
@@ -860,7 +860,7 @@ public class Dash {
 				QueryIterator dashIter = new QueryIteratorDash(this, returnValue);
 				if(log.isLoggable(Level.INFO))
 					log.info("filtered "+returnValue.size()+" bean oids for "+request);
-				return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_HIT_FROM_OID);
+				return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_HIT_FROM_OID);
 			}
 		}
 
@@ -882,7 +882,7 @@ public class Dash {
 				QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn, iter);
 				if(log.isLoggable(Level.INFO))
 					log.info("query gave up after "+ctr+" iterations for "+request);
-				return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS_ABORT_TOO_MANY);
+				return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_MISS_ABORT_TOO_MANY);
 			}
 			
 			// We have all the beans. Cache the oids for next time and return.
@@ -896,7 +896,7 @@ public class Dash {
 			QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn);
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS);
+			return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_MISS);
 		}
 		
 		// We're going to try splitting the operator.
@@ -950,7 +950,7 @@ public class Dash {
 			QueryIterator dashIter = new QueryIteratorDash(this, knownBeans);
 			if(log.isLoggable(Level.INFO))
 				log.info("collection "+knownBeans.size()+" split beans for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_HIT_FROM_SPLIT);
+			return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_HIT_FROM_SPLIT);
 		} else if(removedOperators>0) {
 			// we resolved *some* operators, but not all of them.
 			Operator trimmedOperator = Operator.join(splitOperators.toArray(new Operator[splitOperators.size()]));
@@ -987,7 +987,7 @@ public class Dash {
 			QueryIterator dashIter = new QueryIteratorDash(this, knownBeans, iter);
 			if(log.isLoggable(Level.INFO))
 				log.info("gave up after "+ctr+" iterations for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS_ABORT_TOO_MANY);
+			return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_MISS_ABORT_TOO_MANY);
 		}
 		
 		// we have all the beans; now we just have to stores things in our cache for next time
@@ -1026,11 +1026,11 @@ public class Dash {
 		if(removedOperators > 0) {
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations (with "+removedOperators+" cached split queries) for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_REDUCED_FROM_SPLIT);
+			return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_REDUCED_FROM_SPLIT);
 		} else {
 			if(log.isLoggable(Level.INFO))
 				log.info("queried "+ctr+" iterations for "+request);
-			return new BasicEntry<>(dashIter, CacheResults.Type.QUERY_MISS);
+			return new AbstractMap.SimpleEntry<>(dashIter, CacheResults.Type.QUERY_MISS);
 		}
 	}
 	
