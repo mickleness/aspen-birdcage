@@ -1,10 +1,12 @@
 package org.abc.dash;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+
+import org.abc.dash.WeakValueMap.PurgeListener;
 
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 
@@ -14,17 +16,7 @@ import com.follett.fsc.core.k12.beans.X2BaseBean;
 public class WeakReferenceBeanCache {
 	
 	protected Map<Class<?>, WeakValueMap<String, X2BaseBean>> cache = new HashMap<>();
-	protected Dash dash;
-	
-	/**
-	 * 
-	 * @param dash this is required for logging
-	 */
-	public WeakReferenceBeanCache(Dash dash) {
-		Objects.requireNonNull(dash);
-		this.dash = dash;
-	}
-	
+	List<PurgeListener> purgeListeners = new ArrayList<>();
 	
 	/**
 	 * Return a bean based on its class and oid, or return null.
@@ -57,26 +49,16 @@ public class WeakReferenceBeanCache {
 	 * @param bean the bean to cache. If this is null then this method immediately returns.
 	 */
 	public void storeBean(X2BaseBean bean) {
-		
-		if(bean==null || !dash.isOidCachingActive())
+		if(bean==null)
 			return;
 		
 		synchronized(this) {
 			WeakValueMap<String, X2BaseBean> classCache = cache.get(bean.getClass());
 			if(classCache==null) {
-				classCache = new WeakValueMap<String, X2BaseBean>() {
-					@Override
-					public int purge() {
-						int v = super.purge();
-						if(v>0) {
-							Logger log = dash.getLog();
-							if(log!=null && log.isLoggable(Level.FINE))
-								log.fine("purged "+v+" records");
-						}
-						return v;
-					}
-					
-				};
+				classCache = new WeakValueMap<String, X2BaseBean>();
+				for(PurgeListener purgeListener : purgeListeners) {
+					classCache.addPurgeListener(purgeListener);
+				}
 				cache.put(bean.getClass(), classCache);
 			}
 			
@@ -105,6 +87,27 @@ public class WeakReferenceBeanCache {
 			if(classCache==null)
 				return;
 			classCache.clear();
+		}
+	}
+
+	public void addPurgeListener(PurgeListener purgeListener) {
+		synchronized(this) {
+			Objects.requireNonNull(purgeListener);
+			purgeListeners.add(purgeListener);
+			for(WeakValueMap<String, X2BaseBean> m : cache.values()) {
+				m.addPurgeListener(purgeListener);
+			}
+		}
+		
+	}
+
+	public void removePurgeListener(PurgeListener purgeListener) {
+		synchronized(this) {
+			if(purgeListeners.remove(purgeListener)) {
+				for(WeakValueMap<String, X2BaseBean> m : cache.values()) {
+					m.removePurgeListener(purgeListener);
+				}
+			}
 		}
 	}
 }

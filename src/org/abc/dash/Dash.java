@@ -27,6 +27,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.abc.dash.WeakValueMap.PurgeListener;
 import org.abc.tools.ThreadedBrokerIterator;
 import org.abc.tools.Tool;
 import org.abc.util.OrderByComparator;
@@ -597,7 +598,19 @@ public class Dash {
 		this.persistenceKey = persistenceKey;
 		profiles = new Cache<>(cachePool);
 		getLog().setLevel(Level.OFF);
-		weakReferenceCache = new WeakReferenceBeanCache(this);
+		weakReferenceCache = new WeakReferenceBeanCache();
+		addReferencePurgeListener(new PurgeListener() {
+
+			@Override
+			public void referencesPurged(int purgedReferenceCount) {
+				if(purgedReferenceCount>0) {
+					Logger log = getLog();
+					if(log!=null && log.isLoggable(Level.FINE))
+						log.fine("purged "+purgedReferenceCount+" records");
+				}
+			}
+			
+		});
 	}
 
 	public boolean isOidCachingActive() {
@@ -872,7 +885,7 @@ public class Dash {
 			int maxSize = getMaxOidListSize(false, request.beanQuery);
 			while(iter.hasNext() && ctr<maxSize) {
 				X2BaseBean bean = (X2BaseBean) iter.next();
-				weakReferenceCache.storeBean(bean);
+				storeBean(bean);
 				beansToReturn.add(bean);
 				ctr++;
 			}
@@ -977,7 +990,7 @@ public class Dash {
 		int maxSize = getMaxOidListSize(removedOperators>0, ourQuery);
 		while(iter.hasNext() && ctr<maxSize) {
 			X2BaseBean bean = (X2BaseBean) iter.next();
-			weakReferenceCache.storeBean(bean);
+			storeBean(bean);
 			knownBeans.add(bean);
 			ctr++;
 		}
@@ -1429,5 +1442,19 @@ public class Dash {
 
 	public PersistenceKey getPersistenceKey() {
 		return persistenceKey;
+	}
+
+	protected void storeBean(X2BaseBean bean) {
+		if(isOidCachingActive()) {
+			weakReferenceCache.storeBean(bean);
+		}
+	}
+
+	public void addReferencePurgeListener(PurgeListener purgeListener) {
+		weakReferenceCache.addPurgeListener(purgeListener);
+	}
+
+	public void removeReferencePurgeListener(PurgeListener purgeListener) {
+		weakReferenceCache.removePurgeListener(purgeListener);
 	}
 }

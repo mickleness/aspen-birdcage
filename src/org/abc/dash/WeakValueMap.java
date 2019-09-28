@@ -2,8 +2,11 @@ package org.abc.dash;
 
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * This keeps a strong reference to keys and a weak reference to values.
@@ -13,6 +16,11 @@ import java.util.Map;
  * invoke purge from time to time.
  */
 public class WeakValueMap<K, V> {
+	
+	public interface PurgeListener {
+		public void referencesPurged(int referenceCount);
+	}
+	
 	static class WeakValueReference<K, V> extends WeakReference<V> {
 		K key;
 
@@ -23,8 +31,23 @@ public class WeakValueMap<K, V> {
 		
 	}
 	
+	protected List<PurgeListener> purgeListeners = new ArrayList<>();
 	protected Map<K, WeakValueReference<K, V>> map = new HashMap<>();
 	protected ReferenceQueue<? super V> queue = new ReferenceQueue<>();
+
+	
+	public void addPurgeListener(PurgeListener l) {
+		Objects.requireNonNull(l);
+		synchronized(this) {
+			purgeListeners.add(l);
+		}
+	}
+	
+	public void removePurgeListener(PurgeListener l) {
+		synchronized(this) {
+			purgeListeners.remove(l);
+		}
+	}
 	
 	public V get(K key) {
 		synchronized(this) {
@@ -73,6 +96,14 @@ public class WeakValueMap<K, V> {
 				ref = (WeakValueReference<K, V>) queue.poll();
 				ctr++;
 			}
+			
+			if(ctr>0) {
+				PurgeListener[] array = purgeListeners.toArray(new PurgeListener[purgeListeners.size()]);
+				for(PurgeListener l : array) {
+					l.referencesPurged(ctr);
+				}
+			}
+			
 			return ctr;
 		}
 	}

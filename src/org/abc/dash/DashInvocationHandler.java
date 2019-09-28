@@ -346,7 +346,7 @@ class DashInvocationHandler implements InvocationHandler {
 		}
 		Object returnValue = method.invoke(broker, args);
 		if(returnValue instanceof X2BaseBean) {
-			dash.weakReferenceCache.storeBean( (X2BaseBean) returnValue );
+			dash.storeBean( (X2BaseBean) returnValue );
 		}
 		return returnValue;
 	}
