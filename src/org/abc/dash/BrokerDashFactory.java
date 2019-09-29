@@ -4,6 +4,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -85,45 +86,6 @@ public class BrokerDashFactory {
 	}
 
 	/**
-	 * A key in our cache is a combination of an Operator (the "WHERE" clause) 
-	 * and the comparator (the "ORDER-BY" clause)
-	 */
-	private static class Key {
-		public final Operator operator;
-		public final OrderByComparator orderBy;
-
-		public Key(Operator operator, OrderByComparator orderBy) {
-			Objects.requireNonNull(operator);
-			Objects.requireNonNull(orderBy);
-			this.operator = operator;
-			this.orderBy = orderBy;
-		}
-
-		@Override
-		public int hashCode() {
-			return operator.hashCode();
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (!(obj instanceof Key))
-				return false;
-			Key other = (Key) obj;
-			if (!operator.equals(other.operator))
-				return false;
-			if (!orderBy.equals(other.orderBy))
-				return false;
-			return true;
-		}
-
-		@Override
-		public String toString() {
-			return "Key[ " + operator + ", " + orderBy + "]";
-		}
-
-	}
-
-	/**
 	 * This filters a QueryIterator and records the oids of the beans it
 	 * returns.
 	 * <p>
@@ -147,8 +109,8 @@ public class BrokerDashFactory {
 		QueryIterator iter;
 		int maxListSize;
 		boolean active = true;
-		Cache<Key, List<String>> cache;
-		Key cacheKey;
+		Cache<Object, List<String>> cache;
+		Object cacheKey;
 		List<String> oids = new LinkedList<>();
 
 		/**
@@ -165,8 +127,8 @@ public class BrokerDashFactory {
 		 *            the maximum number of oids this wrapper will record before
 		 *            giving up
 		 */
-		public BeanIteratorWrapper(Cache<Key, List<String>> cache,
-				Key cacheKey, QueryIterator iter, int maxListSize) {
+		public BeanIteratorWrapper(Cache<Object, List<String>> cache,
+				Object cacheKey, QueryIterator iter, int maxListSize) {
 			Objects.requireNonNull(cache);
 			Objects.requireNonNull(cacheKey);
 			Objects.requireNonNull(iter);
@@ -444,10 +406,10 @@ public class BrokerDashFactory {
 		X2Broker broker;
 		boolean active = initialized;
 		CachePool cachePool;
-		Map<Class, Cache<Key, List<String>>> cacheByBeanType;
+		Map<Class, Cache<Object, List<String>>> cacheByBeanType;
 
 		DashInvocationHandler(X2Broker broker,
-				Map<Class, Cache<Key, List<String>>> cacheByBeanType,
+				Map<Class, Cache<Object, List<String>>> cacheByBeanType,
 				CachePool cachePool) {
 			Objects.requireNonNull(broker);
 			Objects.requireNonNull(cacheByBeanType);
@@ -562,19 +524,20 @@ public class BrokerDashFactory {
 					.startsWith("saveBean")) && args[0] instanceof X2BaseBean) {
 				X2BaseBean bean = (X2BaseBean) args[0];
 				Class t = bean.getClass();
-				Cache<Key, List<String>> cache = cacheByBeanType.get(t);
+				Cache<Object, List<String>> cache = cacheByBeanType.get(t);
 				if (cache != null)
 					cache.clear();
 			} else if (method_deleteBeanByOid.equals(method)) {
 				Class beanType = (Class) args[0];
-				Cache<Key, List<String>> cache = cacheByBeanType.get(beanType);
+				Cache<Object, List<String>> cache = cacheByBeanType
+						.get(beanType);
 				if (cache != null)
 					cache.clear();
 			} else if (method_deleteByQuery.equals(method)
 					|| method_executeUpdateQuery.equals(method)
 					|| method_executeInsertQuery.equals(method)) {
 				Query query = (Query) args[0];
-				Cache<Key, List<String>> cache = cacheByBeanType.get(query
+				Cache<Object, List<String>> cache = cacheByBeanType.get(query
 						.getBaseClass());
 				if (cache != null)
 					cache.clear();
@@ -631,28 +594,28 @@ public class BrokerDashFactory {
 					.createOperator(beanQuery.getCriteria());
 			OrderByComparator orderBy = new OrderByComparator(false,
 					beanQuery.getOrderBy());
-			final Key primaryCacheKey = new Key(operator, orderBy);
-			Cache<Key, List<String>> cache = cacheByBeanType.get(beanQuery
+			final Object cacheKey = Arrays.asList(operator, orderBy);
+			Cache<Object, List<String>> cache = cacheByBeanType.get(beanQuery
 					.getBaseClass());
 			if (cache == null) {
 				cache = new Cache(cachePool);
 				cacheByBeanType.put(beanQuery.getBaseClass(), cache);
 			}
 
-			List<String> beanOids = cache.get(primaryCacheKey);
+			List<String> beanOids = cache.get(cacheKey);
 			if (beanOids != null)
 				return new BeanIteratorFromOidList(broker,
 						beanQuery.getBaseClass(), beanOids);
 
 			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
-			return new BeanIteratorWrapper(cache, primaryCacheKey, iter, 1000);
+			return new BeanIteratorWrapper(cache, cacheKey, iter, 1000);
 		}
 	}
 
 	protected CachePool cachePool;
 
 	@SuppressWarnings("rawtypes")
-	Map<Class, Cache<Key, List<String>>> cacheByBeanType;
+	Map<Class, Cache<Object, List<String>>> cacheByBeanType;
 
 	public BrokerDashFactory(int cacheSizeLimit, long cacheDurationLimit) {
 		cachePool = new CachePool(cacheSizeLimit, cacheDurationLimit, -1);
