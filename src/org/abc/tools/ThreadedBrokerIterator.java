@@ -5,6 +5,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -224,6 +225,12 @@ public class ThreadedBrokerIterator<Input, Output> {
 				
 				flushOutputs();
 			}
+		} catch(CancellationException e) {
+			for(Thread thread : threads) {
+				thread.interrupt();
+			}
+			handleUncaughtException(e);
+			throw e;
 		} catch(Exception e) {
 			handleUncaughtException(e);
 		} finally {
