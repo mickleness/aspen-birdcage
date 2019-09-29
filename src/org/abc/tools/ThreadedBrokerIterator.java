@@ -172,6 +172,10 @@ public class ThreadedBrokerIterator<Input, Output> {
 		// before the primary thread resumes building up the queue again
 		int queueCapacity = Math.max(10, threadCount*3);
 		
+		// ... this assumes each invocation of the function is similar in
+		// weight. If the master thread picks up a task that's 10x more work
+		// than most other tasks: this model still falls apart.
+		
 		inputQueue = threadCount>0 ? new ArrayBlockingQueue<Input>(queueCapacity) : null;
 		threads = new Thread[threadCount-1];
 		for(int a = 0; a<threads.length; a++) {
