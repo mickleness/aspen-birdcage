@@ -1,5 +1,8 @@
 package org.abc.util;
 
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
@@ -8,6 +11,7 @@ import java.util.Objects;
 import org.apache.ojb.broker.metadata.FieldHelper;
 
 import com.follett.fsc.core.k12.beans.X2BaseBean;
+import com.follett.fsc.core.k12.business.ModelProperty;
 
 /**
  * This Comparator sorts elements according to a series of
@@ -16,7 +20,9 @@ import com.follett.fsc.core.k12.beans.X2BaseBean;
  * The oid of the beans serves as a tie-breaker if all the requested fields are
  * identical.
  */
-public class OrderByComparator implements Comparator<X2BaseBean> {
+public class OrderByComparator implements Comparator<X2BaseBean>, Serializable {
+	
+	private static final long serialVersionUID = 1L;
 
 	/**
 	 * This sorts two beans according to the value of a particular field
@@ -104,6 +110,21 @@ public class OrderByComparator implements Comparator<X2BaseBean> {
 			sb.append("]");
 			return sb.toString();
 		}
+
+		private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+			out.writeInt(0);
+			out.writeBoolean(nullValueFirst);
+		}
+
+		private void readObject(java.io.ObjectInputStream in) throws IOException,
+				ClassNotFoundException {
+			int version = in.readInt();
+			if (version == 0) {
+				nullValueFirst = in.readBoolean();
+			} else {
+				throw new IOException("Unsupported internal version: " + version);
+			}
+		}
 	}
 
 	protected List<NullSafeFieldHelper> fieldHelpers = new LinkedList<>();
@@ -158,20 +179,21 @@ public class OrderByComparator implements Comparator<X2BaseBean> {
 	 *            passed to {@link X2BaseBean#getFieldValueByBeanPath(String)}.
 	 * @param isAscending
 	 *            true if the values should be sorted in ascending order. False
-	 *            if the values shouldbe in descending order.
+	 *            if the values should be in descending order.
 	 * @param nullValueFirst
 	 *            if true then null values are stored at the beginning of the
 	 *            results. If false then null values are stored at the end of
 	 *            the results.
 	 */
-	public void addOrderBy(String name, boolean isAscending,
+	public synchronized void addOrderBy(String name, boolean isAscending,
 			boolean nullValueFirst) {
 		fieldHelpers.add(new NullSafeFieldHelper(name, isAscending,
 				nullValueFirst));
+		isSimple = null;
 	}
 
 	@Override
-	public int compare(X2BaseBean o1, X2BaseBean o2) {
+	public synchronized int compare(X2BaseBean o1, X2BaseBean o2) {
 		if (o1 == o2)
 			return 0;
 
@@ -196,12 +218,12 @@ public class OrderByComparator implements Comparator<X2BaseBean> {
 	}
 
 	@Override
-	public int hashCode() {
+	public synchronized int hashCode() {
 		return fieldHelpers.hashCode();
 	}
 
 	@Override
-	public boolean equals(Object obj) {
+	public synchronized boolean equals(Object obj) {
 		if (!(obj instanceof OrderByComparator))
 			return false;
 		OrderByComparator other = (OrderByComparator) obj;
@@ -213,8 +235,61 @@ public class OrderByComparator implements Comparator<X2BaseBean> {
 	}
 
 	@Override
-	public String toString() {
+	public synchronized String toString() {
 		return "OrderByComparator[ fields=" + fieldHelpers + ", nullsFirst="
 				+ nullsFirst + "]";
+	}
+
+	/**
+	 * Return a copy of the FieldHelpers this object uses.
+	 */
+	public synchronized List<FieldHelper> getFieldHelpers() {
+		List<FieldHelper> returnValue = new ArrayList<FieldHelper>();
+		returnValue.addAll(fieldHelpers);
+		return returnValue;
+	}
+
+	private transient Boolean isSimple;
+	
+	/**
+	 * Return true if all of the fields in this comparator do not contain
+	 * ModelPropert.PATH_DELIMITER.
+	 * <p>
+	 * For example: if this comparator relates to SisStudent beans,
+	 * then "nameView" and "homeroom" and "personOid" are considered simple,
+	 * but "person.lastName" is not.
+	 * <p>
+	 * Evaluating a simple property should not require any additional
+	 * work on the database's part. Evaluating a non-simple property
+	 * may-or-may-not involve consulting the database.
+	 */
+	public synchronized boolean isSimple() {
+		if(isSimple==null) {
+			for(NullSafeFieldHelper h : fieldHelpers) {
+				if(h.name.indexOf(ModelProperty.PATH_DELIMITER)!=-1)
+					isSimple = Boolean.FALSE;
+			}
+			if(isSimple==null)
+				isSimple = Boolean.TRUE;
+		}
+		return isSimple.booleanValue();
+	}
+
+	private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+		out.writeInt(0);
+		out.writeBoolean(nullsFirst);
+		out.writeObject(fieldHelpers);
+	}
+
+	@SuppressWarnings("unchecked")
+	private void readObject(java.io.ObjectInputStream in) throws IOException,
+			ClassNotFoundException {
+		int version = in.readInt();
+		if (version == 0) {
+			nullsFirst = in.readBoolean();
+			fieldHelpers = (List<NullSafeFieldHelper>) in.readObject();
+		} else {
+			throw new IOException("Unsupported internal version: " + version);
+		}
 	}
 }
