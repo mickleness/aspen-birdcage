@@ -134,7 +134,6 @@ public class ThreadedBrokerIterator<Input, Output> {
 	protected BiFunction<X2Broker, Input, Output> function;
 	protected Consumer<Output> outputListener;
 	private ArrayBlockingQueue<Input> inputQueue;
-	protected int threadCount;
 	protected List<Output> outputQueue = new LinkedList<>();
     private AtomicBoolean completedIterator = new AtomicBoolean(false);
     private Thread[] threads;
@@ -146,11 +145,12 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 * @param function a function that accepts the iterator's values and produces output. This function
 	 *        will probably be called on helper threads, but if threadCount is 0 then this function will be called
 	 *        on the master thread.
-	 * @param threadCount the number of threads to use to evaluate this query's results. This must be zero or greater.
-	 * Each additional thread can use a new X2Broker/database connection, so think of this number as the
-	 * number of database connections you want to run simultaneously.
+	 * @param threadCount the total number of threads, including the current thread, to use to evaluate the query's
+	 * results. For example: if this is 10, then 9 additional threads will be created. This must be one or greater.
+	 * This is also the number of additional X2Brokers that may be created at any given time, so you can
+	 * think of this number as the number of additional database connections this object will use.
 	 * <p>
-	 * If this is zero then the iterator results are processed on the master thread and no new threads are created.
+	 * If this is one then the iterator results are processed on the master thread and no new threads are created.
 	 * @param outputConsumer an optional consumer. If this is non-null, then this consumer is given all the Outputs the
 	 * function creates. The consumer is only invoked on the master thread.
      */
@@ -159,11 +159,10 @@ public class ThreadedBrokerIterator<Input, Output> {
 			int threadCount,Consumer<Output> outputListener) {
 		Objects.requireNonNull(privilegeSet);
 		Objects.requireNonNull(function);
-		if(!(threadCount>=0))
-			throw new IllegalArgumentException("threadCount ("+threadCount+") must be at least zero");
+		if(!(threadCount>=1))
+			throw new IllegalArgumentException("threadCount ("+threadCount+") must be at least one");
 		this.privilegeSet = privilegeSet;
 		this.function = function;
-		this.threadCount = threadCount;
 		
 		// Our master thread (that puts things on the queue) will automatically
 		// switch to become a worker thread if the queue reaches its capacity.
@@ -174,7 +173,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 		int queueCapacity = Math.max(10, threadCount*3);
 		
 		inputQueue = threadCount>0 ? new ArrayBlockingQueue<Input>(queueCapacity) : null;
-		threads = new Thread[threadCount];
+		threads = new Thread[threadCount-1];
 		for(int a = 0; a<threads.length; a++) {
 			threads[a] = new HelperThread(a);
 			threads[a].start();
