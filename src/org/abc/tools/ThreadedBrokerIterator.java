@@ -18,6 +18,7 @@ import com.follett.fsc.core.k12.business.PrivilegeSet;
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.web.AppGlobals;
 import com.x2dev.utils.LoggerUtils;
+import com.x2dev.utils.ThreadUtils;
 
 
 /**
@@ -206,6 +207,8 @@ public class ThreadedBrokerIterator<Input, Output> {
 		
 		try(AutoCloseable z = getAutoCloseable(iter)) {
 			while(iter.hasNext()) {
+				ThreadUtils.checkInterrupt();
+				
 				Input value = (Input) iter.next();
 				
 				if(inputQueue==null) {

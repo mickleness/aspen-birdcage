@@ -11,6 +11,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -25,6 +26,7 @@ import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.x2dev.utils.LoggerUtils;
+import com.x2dev.utils.ThreadUtils;
 
 class DashInvocationHandler implements InvocationHandler {
 	static RuntimeException constructionException;
@@ -153,6 +155,8 @@ class DashInvocationHandler implements InvocationHandler {
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args)
 			throws Throwable {
+		ThreadUtils.checkInterrupt();
+		
 		Logger log = dash.getLog();
 
 		// handle methods unique to the BrokerDash interface:
@@ -178,6 +182,8 @@ class DashInvocationHandler implements InvocationHandler {
 					return invokeCached(proxy, method, args, log, indentHandler);
 				} catch (Exception e) {
 					handleException(e);
+					if(e instanceof CancellationException)
+						throw (CancellationException) e;
 				}
 			}
 
@@ -271,6 +277,8 @@ class DashInvocationHandler implements InvocationHandler {
 					method_getIteratorByQuery, args)) {
 				Collection<X2BaseBean> result = new ArrayList<>();
 				while (queryIter.hasNext()) {
+					ThreadUtils.checkInterrupt();
+					
 					X2BaseBean bean = (X2BaseBean) queryIter.next();
 					result.add(bean);
 				}
@@ -361,6 +369,8 @@ class DashInvocationHandler implements InvocationHandler {
 
 			Map map = new HashMap(mapSizes[0]);
 			while (queryIter.hasNext()) {
+				ThreadUtils.checkInterrupt();
+				
 				X2BaseBean bean = (X2BaseBean) queryIter.next();
 				Map currentMap = map;
 				for (int a = 0; a < columns.length; a++) {

@@ -55,6 +55,7 @@ import com.pump.data.operator.OperatorContext;
 import com.pump.util.Cache;
 import com.pump.util.Cache.CachePool;
 import com.x2dev.utils.StringUtils;
+import com.x2dev.utils.ThreadUtils;
 
 /**
  * The Dash object maintains a cache and a set of shared methods/tools
@@ -889,6 +890,8 @@ public class Dash {
 			int ctr = 0;
 			int maxSize = getMaxOidListSize(false, request.beanQuery);
 			while(iter.hasNext() && ctr<maxSize) {
+				ThreadUtils.checkInterrupt();
+				
 				X2BaseBean bean = (X2BaseBean) iter.next();
 				storeBean(bean);
 				beansToReturn.add(bean);
@@ -930,11 +933,11 @@ public class Dash {
 			knownBeans = new TreeSet<>(request.orderBy);
 		}
 		
-		Iterator<Operator> splitIter = splitOperators.iterator();
+		Iterator<Operator> splitOpIter = splitOperators.iterator();
 		
 		int removedOperators = 0;
-		while(splitIter.hasNext()) {
-			Operator splitOperator = splitIter.next();
+		while(splitOpIter.hasNext()) {
+			Operator splitOperator = splitOpIter.next();
 			CacheKey splitKey = new CacheKey(splitOperator, request.orderBy, request.beanQuery.isDistinct());
 			
 			List<String> splitOids = cache.get(splitKey);
@@ -948,7 +951,7 @@ public class Dash {
 					if(log.isLoggable(Level.INFO))
 						log.info("resolved split operator "+splitBeans.size()+" beans: "+splitOperator);
 					knownBeans.addAll(splitBeans);
-					splitIter.remove();
+					splitOpIter.remove();
 				} else {
 					// We know the exact oids, but those beans aren't in Aspen's cache anymore.
 					// This splitOperator is a lost cause now: so ignore it.
@@ -994,6 +997,8 @@ public class Dash {
 		int ctr = 0;
 		int maxSize = getMaxOidListSize(removedOperators>0, ourQuery);
 		while(iter.hasNext() && ctr<maxSize) {
+			ThreadUtils.checkInterrupt();
+			
 			X2BaseBean bean = (X2BaseBean) iter.next();
 			storeBean(bean);
 			knownBeans.add(bean);

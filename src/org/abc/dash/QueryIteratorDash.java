@@ -13,6 +13,7 @@ import org.apache.ojb.broker.query.Query;
 import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
+import com.x2dev.utils.ThreadUtils;
 
 /**
  * This iterates over a series of X2BaseBeans.
@@ -128,6 +129,8 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 
 	@Override
 	public X2BaseBean next() {
+		ThreadUtils.checkInterrupt();
+		
 		if(queryIterator!=null) {
 			if(queryIterator.hasNext()) {
 				X2BaseBean bean = queryIterator.next();
