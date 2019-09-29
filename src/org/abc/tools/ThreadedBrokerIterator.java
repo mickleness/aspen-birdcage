@@ -5,7 +5,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -34,8 +33,11 @@ import com.x2dev.utils.LoggerUtils;
  * For example: a QueryIterator produced from a BeanQuery for SisStudents will use
  * SisStudents as the Input. Or a column query will use an object array.
  * <p>
- * The Function is called on separate threads to convert an Input to an Output. Each
- * invocation of the function is given a new unique X2Broker.
+ * The BiFunction is usually called on helper threads to convert an Input to an Output.
+ * Each invocation of the function is given a new unique X2Broker.
+ * <p>
+ * When all the helper threads are busy the master thread also processes elements
+ * from the queue, so the master thread can occasionally invoke the function, too.
  * <p>
  * The <code>Output</code> can be anything you want. If you do not need an output: 
  * you can leave this empty and make your function return null. Non-null output
@@ -160,7 +162,16 @@ public class ThreadedBrokerIterator<Input, Output> {
 		this.privilegeSet = privilegeSet;
 		this.function = function;
 		this.threadCount = threadCount;
-		inputQueue = threadCount>0 ? new ArrayBlockingQueue<Input>(threadCount*2) : null;
+		
+		// Our master thread (that puts things on the queue) will automatically
+		// switch to become a worker thread if the queue reaches its capacity.
+		// Therefore we want the queue to be 3x the number of threads:
+		// if the primary thread switches to a worker thread we want there to be
+		// plenty (at *least* 2x) elements for other worker threads to work on
+		// before the primary thread resumes building up the queue again
+		int queueCapacity = Math.max(10, threadCount*3);
+		
+		inputQueue = threadCount>0 ? new ArrayBlockingQueue<Input>(queueCapacity) : null;
 		threads = new Thread[threadCount];
 		for(int a = 0; a<threads.length; a++) {
 			threads[a] = new HelperThread(a);
@@ -194,36 +205,21 @@ public class ThreadedBrokerIterator<Input, Output> {
 		completedIterator.set(false);
 		
 		try(AutoCloseable z = getAutoCloseable(iter)) {
-			int elementCtr = 0;
 			while(iter.hasNext()) {
 				Input value = (Input) iter.next();
 				
 				if(inputQueue==null) {
-					try {
-						Output output = function.apply(createBroker(), value);
-						if(output!=null)
-							outputQueue.add(output);
-					} catch(Exception e) {
-						handleUncaughtException(e);
-					}
+					runFunctionOnMasterThread(value);
 				} else {
-	        		long t = System.currentTimeMillis();
-	        		while(true) {
-	        			long elapsed = System.currentTimeMillis() - t;
-	        			if(isSubmitTimeout(elapsed))
-	        				throw new RuntimeException("Unexpectedly slow queue: "+elapsed+" ms, elementCtr = "+elementCtr);
-	        			try {
-		        			if(inputQueue.offer( value, 5, TimeUnit.SECONDS))
-		        				break;
-	        			} catch(InterruptedException e) {
-	        				//intentionally empty
-	        			}
-	        		}
+	        		if(!inputQueue.offer(value)) {
+	        			// If all our other threads are busy: then we become a worker thread.
+	        			// We made sure the inputQueue was large enough that the other threads
+	        			// should have something to work on if they finish their task
+						runFunctionOnMasterThread(value);
+					}
 				}
 				
 				flushOutputs();
-        		
-        		elementCtr++;
 			}
 		} catch(Exception e) {
 			handleUncaughtException(e);
@@ -233,12 +229,31 @@ public class ThreadedBrokerIterator<Input, Output> {
 		
 		// we stopped adding things to our queue, but we need to make sure our helper threads addressed them all:
 		while(getActiveHelperThreadCount()>0) {
-			try {
-				Thread.sleep(10);
-			} catch(InterruptedException e) {}
+			Input input = inputQueue.poll();
+			if(input!=null) {
+				runFunctionOnMasterThread(input);
+			} else {
+				//out queue is empty, but helper threads are still wrapping up. So we wait:
+				try {
+					Thread.sleep(10);
+				} catch(InterruptedException e) {}
+			}
 		}
 		
 		flushOutputs();
+	}
+	
+	private void runFunctionOnMasterThread(Input value) {
+		try {
+			Output output = function.apply(createBroker(), value);
+			if(output!=null) {
+				synchronized(outputQueue) {
+					outputQueue.add(output);
+				}
+			}
+		} catch(Exception e) {
+			handleUncaughtException(e);
+		}
 	}
 	
 	/**
@@ -298,14 +313,6 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 * The default value of 10 minutes.
 	 */
 	protected boolean isPollTimeout(long elapsedMillis) {
-		return elapsedMillis > 1000*60*10;
-	}
-	
-	/**
-	 * Return the number of milliseconds the master thread will wait for a consumer thread to become available.
-	 * The default value is 10 minutes.
-	 */
-	protected boolean isSubmitTimeout(long elapsedMillis) {
 		return elapsedMillis > 1000*60*10;
 	}
 	
