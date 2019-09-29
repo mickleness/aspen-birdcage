@@ -52,12 +52,11 @@ class DashInvocationHandler implements InvocationHandler {
 
 	static {
 		try {
-			method_getDash = BrokerDash.class
-					.getMethod("getDash");
+			method_getDash = BrokerDash.class.getMethod("getDash");
 			method_getIteratorByQuery = X2Broker.class.getMethod(
 					"getIteratorByQuery", Query.class);
-			method_getBeanByQuery = X2Broker.class.getMethod(
-					"getBeanByQuery", Query.class);
+			method_getBeanByQuery = X2Broker.class.getMethod("getBeanByQuery",
+					Query.class);
 			method_clearCache = X2Broker.class.getMethod("clearCache");
 			method_rollbackTransaction1 = X2Broker.class
 					.getMethod("rollbackTransaction");
@@ -67,8 +66,8 @@ class DashInvocationHandler implements InvocationHandler {
 					X2BaseBean.class);
 			method_deleteBeanByOid = X2Broker.class.getMethod(
 					"deleteBeanByOid", Class.class, String.class);
-			method_deleteByQuery = X2Broker.class.getMethod(
-					"deleteByQuery", Query.class);
+			method_deleteByQuery = X2Broker.class.getMethod("deleteByQuery",
+					Query.class);
 			method_executeUpdateQuery = X2Broker.class.getMethod(
 					"executeUpdateQuery", UpdateQuery.class);
 			method_executeInsertQuery = X2Broker.class.getMethod(
@@ -76,35 +75,37 @@ class DashInvocationHandler implements InvocationHandler {
 			method_getCollectionByQuery = X2Broker.class.getMethod(
 					"getCollectionByQuery", Query.class);
 			method_getGroupedCollectionByQuery1 = X2Broker.class.getMethod(
-					"getGroupedCollectionByQuery", Query.class,
-					String.class, Integer.TYPE);
-			method_getGroupedCollectionByQuery2 = X2Broker.class.getMethod(
-					"getGroupedCollectionByQuery", Query.class,
-					String[].class, new int[0].getClass());
-			method_getMapByQuery = X2Broker.class.getMethod(
-					"getMapByQuery", Query.class, String.class,
+					"getGroupedCollectionByQuery", Query.class, String.class,
 					Integer.TYPE);
+			method_getGroupedCollectionByQuery2 = X2Broker.class.getMethod(
+					"getGroupedCollectionByQuery", Query.class, String[].class,
+					new int[0].getClass());
+			method_getMapByQuery = X2Broker.class.getMethod("getMapByQuery",
+					Query.class, String.class, Integer.TYPE);
 			method_getNestedMapByQuery1 = X2Broker.class.getMethod(
 					"getNestedMapByQuery", Query.class, String.class,
 					String.class, Integer.TYPE, Integer.TYPE);
 			method_getNestedMapByQuery2 = X2Broker.class.getMethod(
 					"getNestedMapByQuery", Query.class, String[].class,
 					new int[0].getClass());
-			method_getBeanByOid = X2Broker.class.getMethod("getBeanByOid", Class.class, String.class);
+			method_getBeanByOid = X2Broker.class.getMethod("getBeanByOid",
+					Class.class, String.class);
 			initialized = true;
 		} catch (Exception e) {
-			constructionException = new RuntimeException("An error occurred initializing the Dash cache architecture, so it is being deactivated.", e);
+			constructionException = new RuntimeException(
+					"An error occurred initializing the Dash cache architecture, so it is being deactivated.",
+					e);
 		}
 	}
-	
+
 	static class IndentionHandler extends Handler {
-		
+
 		int spaces = 2;
 
 		@Override
 		public void publish(LogRecord record) {
 			StringBuilder sb = new StringBuilder();
-			for(int a = 0; a<spaces; a++) {
+			for (int a = 0; a < spaces; a++) {
 				sb.append(" ");
 			}
 			String msg = record.getMessage();
@@ -113,24 +114,25 @@ class DashInvocationHandler implements InvocationHandler {
 		}
 
 		@Override
-		public void flush() {}
+		public void flush() {
+		}
 
 		@Override
-		public void close() throws SecurityException {}
+		public void close() throws SecurityException {
+		}
 
 		public void increase() {
 			spaces += 2;
 		}
-		
+
 	}
 
 	X2Broker broker;
 	boolean active = initialized;
 	Dash dash;
 
-	DashInvocationHandler(X2Broker broker,
-			Dash dash) {
-		if(constructionException!=null)
+	DashInvocationHandler(X2Broker broker, Dash dash) {
+		if (constructionException != null)
 			throw constructionException;
 		Objects.requireNonNull(broker);
 		Objects.requireNonNull(dash);
@@ -139,16 +141,18 @@ class DashInvocationHandler implements InvocationHandler {
 	}
 
 	protected void handleException(Exception e) {
-		Exception e2 = new Exception("An error occurred using the Dash cache architecture, so it is being deactivated.", e);
+		Exception e2 = new Exception(
+				"An error occurred using the Dash cache architecture, so it is being deactivated.",
+				e);
 		UncaughtExceptionHandler ueh = dash.getUncaughtExceptionHandler();
-		if(ueh!=null) {
+		if (ueh != null) {
 			ueh.uncaughtException(Thread.currentThread(), e2);
 		}
-		
+
 		Logger log = dash.getLog();
-		if(log!=null && log.isLoggable(Level.WARNING))
+		if (log != null && log.isLoggable(Level.WARNING))
 			log.warning(LoggerUtils.convertThrowableToString(e2));
-		
+
 		active = false;
 	}
 
@@ -156,23 +160,23 @@ class DashInvocationHandler implements InvocationHandler {
 	public Object invoke(Object proxy, Method method, Object[] args)
 			throws Throwable {
 		ThreadUtils.checkInterrupt();
-		
+
 		Logger log = dash.getLog();
 
 		// handle methods unique to the BrokerDash interface:
 
 		if (method_getDash.equals(method)) {
 			return dash;
-		} else if(method.getName().equals("setDashActive")) {
-			if(log!=null && log.isLoggable(Level.FINE)) {
-				log.fine("setDashActive "+args[0]);
+		} else if (method.getName().equals("setDashActive")) {
+			if (log != null && log.isLoggable(Level.FINE)) {
+				log.fine("setDashActive " + args[0]);
 			}
-			active = ((Boolean)args[0]).booleanValue();
+			active = ((Boolean) args[0]).booleanValue();
 			return Void.TYPE;
-		} else if(method.getName().equals("isDashActive")) {
+		} else if (method.getName().equals("isDashActive")) {
 			return active;
 		}
-		
+
 		IndentionHandler indentHandler = indentLog(log);
 		try {
 			// if possible: intercept methods using our caching model/layer
@@ -182,7 +186,7 @@ class DashInvocationHandler implements InvocationHandler {
 					return invokeCached(proxy, method, args, log, indentHandler);
 				} catch (Exception e) {
 					handleException(e);
-					if(e instanceof CancellationException)
+					if (e instanceof CancellationException)
 						throw (CancellationException) e;
 				}
 			}
@@ -190,73 +194,78 @@ class DashInvocationHandler implements InvocationHandler {
 			// ... if that fails: invoke the method without our caching
 			// model/layer:
 
-			if(log!=null && log.isLoggable(Level.FINEST) && !method.getName().equals("getPersistenceKey")) {
-				if(args==null || args.length==0) {
+			if (log != null && log.isLoggable(Level.FINEST)
+					&& !method.getName().equals("getPersistenceKey")) {
+				if (args == null || args.length == 0) {
 					log.finest(method.getName());
 				} else {
-					log.finest(method.getName()+" "+Arrays.asList(args));
+					log.finest(method.getName() + " " + Arrays.asList(args));
 				}
 			}
-			
+
 			long t = System.currentTimeMillis();
 			Object returnValue = method.invoke(broker, args);
 			t = System.currentTimeMillis() - t;
-			if(t>10 && log!=null && log.isLoggable(Level.FINEST) && !method.getName().equals("getPersistenceKey")) {
-				log.finest(method.getName()+" (ended)");
+			if (t > 10 && log != null && log.isLoggable(Level.FINEST)
+					&& !method.getName().equals("getPersistenceKey")) {
+				log.finest(method.getName() + " (ended)");
 			}
-			
+
 			return returnValue;
 		} finally {
-			if(indentHandler!=null)
+			if (indentHandler != null)
 				log.removeHandler(indentHandler);
 		}
 	}
 
 	private IndentionHandler indentLog(Logger log) {
-		if(log==null)
+		if (log == null)
 			return null;
-		//insert our handler as the zero-eth handler so it grabs messages before anyone else
+		// insert our handler as the zero-eth handler so it grabs messages
+		// before anyone else
 		IndentionHandler indentHandler = new IndentionHandler();
 		Handler[] oldHandlers = log.getHandlers();
-		for(int a = 0; a<oldHandlers.length; a++) {
+		for (int a = 0; a < oldHandlers.length; a++) {
 			log.removeHandler(oldHandlers[a]);
 		}
 		log.addHandler(indentHandler);
-		for(int a = 0; a<oldHandlers.length; a++) {
+		for (int a = 0; a < oldHandlers.length; a++) {
 			log.addHandler(oldHandlers[a]);
 		}
 		return indentHandler;
 	}
 
 	@SuppressWarnings({ "rawtypes" })
-	protected Object invokeCached(Object proxy, Method method, Object[] args,Logger log,IndentionHandler indention)
-			throws Throwable {
-		if(method_getBeanByOid.equals(method)) {
-			if(log!=null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName()+" "+Arrays.asList(args));
+	protected Object invokeCached(Object proxy, Method method, Object[] args,
+			Logger log, IndentionHandler indention) throws Throwable {
+		if (method_getBeanByOid.equals(method)) {
+			if (log != null && log.isLoggable(Level.FINER)) {
+				log.finer(method.getName() + " " + Arrays.asList(args));
 			}
 			indention.increase();
-			X2BaseBean bean = dash.getBeanByOid(broker.getPersistenceKey(), (Class) args[0], (String) args[1]);
-			if(bean!=null)
+			X2BaseBean bean = dash.getBeanByOid(broker.getPersistenceKey(),
+					(Class) args[0], (String) args[1]);
+			if (bean != null)
 				return bean;
 		} else if (method_getIteratorByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if(log!=null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName()+" "+Arrays.asList(args));
+			if (log != null && log.isLoggable(Level.FINER)) {
+				log.finer(method.getName() + " " + Arrays.asList(args));
 			}
 			indention.increase();
 			QueryByCriteria query = (QueryByCriteria) args[0];
 			active = false;
 			try {
-				QueryIterator returnValue = dash.createQueryIterator( (X2Broker) proxy, query);
+				QueryIterator returnValue = dash.createQueryIterator(
+						(X2Broker) proxy, query);
 				return returnValue;
 			} finally {
 				active = true;
 			}
 		} else if (method_getBeanByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if(log!=null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName()+" "+Arrays.asList(args));
+			if (log != null && log.isLoggable(Level.FINER)) {
+				log.finer(method.getName() + " " + Arrays.asList(args));
 			}
 			indention.increase();
 			// pass through getIteratorByQuery to benefit from our caching
@@ -268,8 +277,8 @@ class DashInvocationHandler implements InvocationHandler {
 			}
 		} else if (method_getCollectionByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if(log!=null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName()+" "+Arrays.asList(args));
+			if (log != null && log.isLoggable(Level.FINER)) {
+				log.finer(method.getName() + " " + Arrays.asList(args));
 			}
 			indention.increase();
 			// pass through getIteratorByQuery to benefit from our caching
@@ -278,7 +287,7 @@ class DashInvocationHandler implements InvocationHandler {
 				Collection<X2BaseBean> result = new ArrayList<>();
 				while (queryIter.hasNext()) {
 					ThreadUtils.checkInterrupt();
-					
+
 					X2BaseBean bean = (X2BaseBean) queryIter.next();
 					result.add(bean);
 				}
@@ -289,12 +298,11 @@ class DashInvocationHandler implements InvocationHandler {
 			Object[] newArgs = new Object[] { args[0],
 					new String[] { (String) args[1] },
 					new int[] { ((Integer) args[2]).intValue() } };
-			return invoke(proxy, method_getGroupedCollectionByQuery2,
-					newArgs);
+			return invoke(proxy, method_getGroupedCollectionByQuery2, newArgs);
 		} else if (method_getGroupedCollectionByQuery2.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if(log!=null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName()+" "+Arrays.asList(args));
+			if (log != null && log.isLoggable(Level.FINER)) {
+				log.finer(method.getName() + " " + Arrays.asList(args));
 			}
 			indention.increase();
 			QueryByCriteria query = (QueryByCriteria) args[0];
@@ -302,7 +310,7 @@ class DashInvocationHandler implements InvocationHandler {
 			int[] mapSizes = (int[]) args[2];
 			return createNestedMap(proxy, query, columns, mapSizes, true);
 		} else if (method_getMapByQuery.equals(method)
-				&& Dash.isBeanQuery(args[0]) ) {
+				&& Dash.isBeanQuery(args[0])) {
 			Object[] newArgs = new Object[] { args[0],
 					new String[] { (String) args[1] },
 					new int[] { ((Integer) args[2]).intValue() } };
@@ -316,9 +324,9 @@ class DashInvocationHandler implements InvocationHandler {
 							((Integer) args[4]).intValue() } };
 			return invoke(proxy, method_getNestedMapByQuery2, newArgs);
 		} else if (method_getNestedMapByQuery2.equals(method)
-				&& Dash.isBeanQuery(args[0]) ) {
-			if(log!=null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName()+" "+Arrays.asList(args));
+				&& Dash.isBeanQuery(args[0])) {
+			if (log != null && log.isLoggable(Level.FINER)) {
+				log.finer(method.getName() + " " + Arrays.asList(args));
 			}
 			indention.increase();
 			QueryByCriteria query = (QueryByCriteria) args[0];
@@ -327,7 +335,7 @@ class DashInvocationHandler implements InvocationHandler {
 			return createNestedMap(proxy, query, columns, mapSizes, false);
 		} else if (method_clearCache.equals(method)) {
 			dash.clearAll();
-		} else if(method_rollbackTransaction1.equals(method)
+		} else if (method_rollbackTransaction1.equals(method)
 				|| method_rollbackTransaction2.equals(method)) {
 			dash.clearModifiedBeanTypes();
 		} else if ((method_deleteBean.equals(method) || method.getName()
@@ -345,16 +353,17 @@ class DashInvocationHandler implements InvocationHandler {
 			dash.modifyBeanRecord(query.getBaseClass());
 		}
 
-		if(log!=null && log.isLoggable(Level.FINEST) && !method.getName().equals("getPersistenceKey")) {
-			if(args==null || args.length==0) {
+		if (log != null && log.isLoggable(Level.FINEST)
+				&& !method.getName().equals("getPersistenceKey")) {
+			if (args == null || args.length == 0) {
 				log.finest(method.getName());
 			} else {
-				log.finest(method.getName()+" "+Arrays.asList(args));
+				log.finest(method.getName() + " " + Arrays.asList(args));
 			}
 		}
 		Object returnValue = method.invoke(broker, args);
-		if(returnValue instanceof X2BaseBean) {
-			dash.storeBean( (X2BaseBean) returnValue );
+		if (returnValue instanceof X2BaseBean) {
+			dash.storeBean((X2BaseBean) returnValue);
 		}
 		return returnValue;
 	}
@@ -370,7 +379,7 @@ class DashInvocationHandler implements InvocationHandler {
 			Map map = new HashMap(mapSizes[0]);
 			while (queryIter.hasNext()) {
 				ThreadUtils.checkInterrupt();
-				
+
 				X2BaseBean bean = (X2BaseBean) queryIter.next();
 				Map currentMap = map;
 				for (int a = 0; a < columns.length; a++) {
