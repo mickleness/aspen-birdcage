@@ -1,5 +1,7 @@
 package org.abc.dash;
 
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.io.Serializable;
 import java.lang.Thread.UncaughtExceptionHandler;
@@ -27,7 +29,6 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import org.abc.dash.WeakValueMap.PurgeListener;
 import org.abc.tools.ThreadedBrokerIterator;
 import org.abc.tools.Tool;
 import org.abc.util.OrderByComparator;
@@ -599,14 +600,18 @@ public class Dash {
 		profiles = new Cache<>(cachePool);
 		getLog().setLevel(Level.OFF);
 		weakReferenceCache = new WeakReferenceBeanCache();
-		addReferencePurgeListener(new PurgeListener() {
+		weakReferenceCache.addPropertyListener(new PropertyChangeListener() {
 
 			@Override
-			public void referencesPurged(int purgedReferenceCount) {
-				if(purgedReferenceCount>0) {
-					Logger log = getLog();
-					if(log!=null && log.isLoggable(Level.FINE))
-						log.fine("purged "+purgedReferenceCount+" records");
+			public void propertyChange(PropertyChangeEvent evt) {
+				if(WeakReferenceBeanCache.PROPERTY_SIZE.equals(evt.getPropertyName())) {
+					int oldSize = (Integer) evt.getOldValue();
+					int newSize = (Integer) evt.getNewValue();
+					int change = newSize - oldSize;
+					if(change<0) {
+						if(log!=null && log.isLoggable(Level.FINE))
+							log.fine("purged "+(-change)+" references");
+					}
 				}
 			}
 			
@@ -1450,11 +1455,14 @@ public class Dash {
 		}
 	}
 
-	public void addReferencePurgeListener(PurgeListener purgeListener) {
-		weakReferenceCache.addPurgeListener(purgeListener);
+	/**
+	 * This listener will be notified when the {@link WeakReferenceBeanCache#PROPERTY_SIZE} property changes.
+	 */
+	public void addWeakReferencePropertyListener(PropertyChangeListener l) {
+		weakReferenceCache.addPropertyListener(l);
 	}
 
-	public void removeReferencePurgeListener(PurgeListener purgeListener) {
-		weakReferenceCache.removePurgeListener(purgeListener);
+	public void removeWeakReferencePropertyListener(PropertyChangeListener l) {
+		weakReferenceCache.addPropertyListener(l);
 	}
 }

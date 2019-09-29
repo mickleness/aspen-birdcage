@@ -1,5 +1,7 @@
 package org.abc.dash;
 
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
@@ -11,48 +13,69 @@ import java.util.Objects;
 /**
  * This keeps a strong reference to keys and a weak reference to values.
  * <p>
- * Every time you interact with this object it calls {@link #purge()} to
- * clean up stale references. You can also set up a timer to automatically
- * invoke purge from time to time.
+ * Every time you interact with this object the {@link #purge()} is called to
+ * clean up stale references. (In some cases you may want to also set up
+ * an independent timer to also purge references.)
+ * 
+ * @param <K> the key in a key/value pair. This maps keeps strong references to the keys.
+ * @param <V> the value in a key/value pair. The map keeps weak references to the values.
  */
 public class WeakValueMap<K, V> {
 	
-	public interface PurgeListener {
-		public void referencesPurged(int referenceCount);
-	}
+	/**
+	 * This is the property attached to PropertyChangeEvents when the size
+	 * of this map changes.
+	 */
+	public static final String PROPERTY_SIZE = WeakValueMap.class.getSimpleName()+"#size";
 	
-	static class WeakValueReference<K, V> extends WeakReference<V> {
-		K key;
+	/**
+	 * This custom WeakReference also keeps track of our key.
+	 *
+	 * @param <K> the key in a key/value pair. This object keeps a strong
+	 * reference to the key.
+	 * @param <V> the value in a key/value pair. This object is a weak
+	 * reference to the value.
+	 */
+	static class WeakValueMapValue<K, V> extends WeakReference<V> {
+		protected K key;
 
-		public WeakValueReference(K key, V referent, ReferenceQueue<? super V> q) {
+		public WeakValueMapValue(K key, V referent, ReferenceQueue<? super V> q) {
 			super(referent, q);
 			this.key = key;
 		}
 		
 	}
 	
-	protected List<PurgeListener> purgeListeners = new ArrayList<>();
-	protected Map<K, WeakValueReference<K, V>> map = new HashMap<>();
+	protected List<PropertyChangeListener> propertyListeners = new ArrayList<>();
+	protected Map<K, WeakValueMapValue<K, V>> map = new HashMap<>();
+	
+	/**
+	 * All of our WeakValueReferences use this queue. This helps us efficiently track
+	 * when elements are enqueued so we can purge stale data from our map.
+	 */
 	protected ReferenceQueue<? super V> queue = new ReferenceQueue<>();
 
-	
-	public void addPurgeListener(PurgeListener l) {
+	/**
+	 * Add a PropertyChangeListener to this map. This is notified when the
+	 * {@link #PROPERTY_SIZE} property changes.
+	 */
+	public void addPropertyListener(PropertyChangeListener l) {
 		Objects.requireNonNull(l);
 		synchronized(this) {
-			purgeListeners.add(l);
+			propertyListeners.add(l);
 		}
 	}
 	
-	public void removePurgeListener(PurgeListener l) {
+	public void removePropertyListener(PropertyChangeListener l) {
 		synchronized(this) {
-			purgeListeners.remove(l);
+			propertyListeners.remove(l);
 		}
 	}
 	
 	public V get(K key) {
 		synchronized(this) {
 			purge();
-			WeakValueReference<K, V> ref = map.get(key);
+			WeakValueMapValue<K, V> ref = map.get(key);
 			if(ref==null)
 				return null;
 			return ref.get();
@@ -69,17 +92,27 @@ public class WeakValueMap<K, V> {
 	public boolean containsKey(K key) {
 		synchronized(this) {
 			purge();
-			WeakValueReference<K, V> ref = map.get(key);
+			WeakValueMapValue<K, V> ref = map.get(key);
+			if(ref==null)
+				return false;
 			return ref.get()!=null;
 		}
 	}
 	
-	public void put(K key, V value) {
+	public V put(K key, V value) {
+		int oldSize, newSize;
+		V returnValue;
 		synchronized(this) {
 			purge();
-			WeakValueReference<K, V> newRef = new WeakValueReference<>(key, value, queue);
-			map.put(key, newRef);
+			
+			oldSize = map.size();
+			WeakValueMapValue<K, V> newRef = new WeakValueMapValue<>(key, value, queue);
+			WeakValueMapValue<K, V> oldRef = map.put(key, newRef);
+			returnValue = oldRef==null ? null : oldRef.get();
+			newSize = map.size();
 		}
+		firePropertyEvent(PROPERTY_SIZE, oldSize, newSize);
+		return returnValue;
 	}
 	
 	/**
@@ -87,24 +120,37 @@ public class WeakValueMap<K, V> {
 	 * 
 	 * @return the number of removed references.
 	 */
+	@SuppressWarnings("unchecked")
 	public int purge() {
+		int oldSize, newSize;
+		int returnValue = 0;
 		synchronized(this) {
-			WeakValueReference<K, V> ref = (WeakValueReference<K, V>) queue.poll();
-			int ctr = 0;
+			oldSize = map.size();
+			WeakValueMapValue<K, V> ref = (WeakValueMapValue<K, V>) queue.poll();
 			while(ref!=null) {
 				map.remove(ref.key);
-				ref = (WeakValueReference<K, V>) queue.poll();
-				ctr++;
+				ref = (WeakValueMapValue<K, V>) queue.poll();
+				returnValue++;
 			}
-			
-			if(ctr>0) {
-				PurgeListener[] array = purgeListeners.toArray(new PurgeListener[purgeListeners.size()]);
-				for(PurgeListener l : array) {
-					l.referencesPurged(ctr);
-				}
-			}
-			
-			return ctr;
+
+			newSize = map.size();
+		}
+		firePropertyEvent(PROPERTY_SIZE, oldSize, newSize);
+		return returnValue;
+	}
+	
+	/**
+	 * Fire PropertyChangeEvents to listeners.
+	 */
+	protected void firePropertyEvent(String propertyName,Object oldValue,Object newValue) {
+		if(Objects.equals(oldValue, newValue))
+			return;
+		PropertyChangeListener[] array;
+		synchronized(this) {
+			array = propertyListeners.toArray(new PropertyChangeListener[propertyListeners.size()]);
+		}
+		for(PropertyChangeListener l : array) {
+			l.propertyChange(new PropertyChangeEvent(this, propertyName, oldValue, newValue));
 		}
 	}
 	
@@ -115,7 +161,7 @@ public class WeakValueMap<K, V> {
 		synchronized(this) {
 			purge();
 			Map<K, V> returnValue = new HashMap<>(map.size());
-			for(WeakValueReference<K, V> ref : map.values()) {
+			for(WeakValueMapValue<K, V> ref : map.values()) {
 				K key = ref.key;
 				V value = ref.get();
 				if(value!=null)
@@ -125,9 +171,17 @@ public class WeakValueMap<K, V> {
 		}
 	}
 	
+	/**
+	 * Clear all the key/value pairs in this map.
+	 */
 	public void clear() {
+		int oldSize;
 		synchronized(this) {
-			for(WeakValueReference<K, V> ref : map.values()) {
+			oldSize = size();
+			if(oldSize==0)
+				return;
+			
+			for(WeakValueMapValue<K, V> ref : map.values()) {
 				ref.enqueue();
 			}
 			while(true) {
@@ -135,8 +189,12 @@ public class WeakValueMap<K, V> {
 					break;
 			}
 			map.clear();
+			
+			//this shouldn't be necessary, but just to be thorough:
 			queue = new ReferenceQueue<>();
 		}
+		
+		firePropertyEvent(PROPERTY_SIZE, oldSize, 0);
 	}
 
 	@Override

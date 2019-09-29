@@ -1,12 +1,12 @@
 package org.abc.dash;
 
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
-import org.abc.dash.WeakValueMap.PurgeListener;
 
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 
@@ -15,8 +15,62 @@ import com.follett.fsc.core.k12.beans.X2BaseBean;
  */
 public class WeakReferenceBeanCache {
 	
+	/**
+	 * This is the property attached to PropertyChangeEvents when the size
+	 * of this cache changes.
+	 */
+	public static final String PROPERTY_SIZE = WeakReferenceBeanCache.class.getSimpleName()+"#size";
+	
 	protected Map<Class<?>, WeakValueMap<String, X2BaseBean>> cache = new HashMap<>();
-	List<PurgeListener> purgeListeners = new ArrayList<>();
+	protected int cacheSize = 0;
+	
+	private PropertyChangeListener memberCacheSizeListener = new PropertyChangeListener() {
+
+		@Override
+		public void propertyChange(PropertyChangeEvent evt) {
+			if(WeakValueMap.PROPERTY_SIZE.equals(evt.getPropertyName())) {
+				int oldSize = (Integer) evt.getOldValue();
+				int newSize = (Integer) evt.getNewValue();
+				int oldCacheSize, newCacheSize;
+				synchronized(WeakReferenceBeanCache.this) {
+					oldCacheSize = cacheSize;
+					cacheSize += newSize - oldSize;
+					newCacheSize = cacheSize;
+				}
+				firePropertyChangeEvent(PROPERTY_SIZE, oldCacheSize, newCacheSize);
+			}
+		}
+	};
+		
+	protected List<PropertyChangeListener> propertyListeners = new ArrayList<>();
+	
+	/**
+	 * Add a PropertyChangeListener to this cache. This is notified when the
+	 * {@link #PROPERTY_SIZE} property changes.
+	 */
+	public void addPropertyListener(PropertyChangeListener l) {
+		Objects.requireNonNull(l);
+		synchronized(this) {
+			propertyListeners.add(l);
+		}
+	}
+	
+	protected void firePropertyChangeEvent(String propertyName,
+			Object oldValue, Object newValue) {
+		PropertyChangeListener[] array;
+		synchronized(this) {
+			array = propertyListeners.toArray(new PropertyChangeListener[propertyListeners.size()]);
+		}
+		for(PropertyChangeListener l : array) {
+			l.propertyChange(new PropertyChangeEvent(this, propertyName, oldValue, newValue));
+		}
+	}
+
+	public void removePropertyListener(PropertyChangeListener l) {
+		synchronized(this) {
+			propertyListeners.remove(l);
+		}
+	}
 	
 	/**
 	 * Return a bean based on its class and oid, or return null.
@@ -56,9 +110,7 @@ public class WeakReferenceBeanCache {
 			WeakValueMap<String, X2BaseBean> classCache = cache.get(bean.getClass());
 			if(classCache==null) {
 				classCache = new WeakValueMap<String, X2BaseBean>();
-				for(PurgeListener purgeListener : purgeListeners) {
-					classCache.addPurgeListener(purgeListener);
-				}
+				classCache.addPropertyListener(memberCacheSizeListener);
 				cache.put(bean.getClass(), classCache);
 			}
 			
@@ -87,27 +139,6 @@ public class WeakReferenceBeanCache {
 			if(classCache==null)
 				return;
 			classCache.clear();
-		}
-	}
-
-	public void addPurgeListener(PurgeListener purgeListener) {
-		synchronized(this) {
-			Objects.requireNonNull(purgeListener);
-			purgeListeners.add(purgeListener);
-			for(WeakValueMap<String, X2BaseBean> m : cache.values()) {
-				m.addPurgeListener(purgeListener);
-			}
-		}
-		
-	}
-
-	public void removePurgeListener(PurgeListener purgeListener) {
-		synchronized(this) {
-			if(purgeListeners.remove(purgeListener)) {
-				for(WeakValueMap<String, X2BaseBean> m : cache.values()) {
-					m.removePurgeListener(purgeListener);
-				}
-			}
 		}
 	}
 }
