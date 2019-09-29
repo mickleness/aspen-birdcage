@@ -24,52 +24,59 @@ import com.follett.fsc.core.k12.web.AppGlobals;
 import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.ThreadUtils;
 
-
 /**
- * This walks through all the elements in an Iterator and passes them to separate
- * threads for processing. This speeds up the time it takes a tool to execute, but
- * every additional thread requires a unique database connection: so if you give
- * 10 tools 10 threads you're asking for 100 database connections.
+ * This walks through all the elements in an Iterator and passes them to
+ * separate threads for processing. This speeds up the time it takes a tool to
+ * execute, but every additional thread requires a unique database connection:
+ * so if you give 10 tools 10 threads you're asking for 100 database
+ * connections.
  * <p>
  * The thread that sets up and initiates a ThreadedBrokerIterator is considered
- * the master thread. It will create n-many helper threads. 
+ * the master thread. It will create n-many helper threads.
  * <p>
- * The type of object the iterator produces is the <code>Input</code> for this object.
- * For example: a QueryIterator produced from a BeanQuery for SisStudents will use
- * SisStudents as the Input. Or a column query will use an object array.
+ * The type of object the iterator produces is the <code>Input</code> for this
+ * object. For example: a QueryIterator produced from a BeanQuery for
+ * SisStudents will use SisStudents as the Input. Or a column query will use an
+ * object array.
  * <p>
- * The BiFunction is usually called on helper threads to convert an Input to an Output.
- * Each invocation of the function is given a new unique X2Broker.
+ * The BiFunction is usually called on helper threads to convert an Input to an
+ * Output. Each invocation of the function is given a new unique X2Broker.
  * <p>
- * When all the helper threads are busy the master thread also processes elements
- * from the queue, so the master thread can occasionally invoke the function, too.
+ * When all the helper threads are busy the master thread also processes
+ * elements from the queue, so the master thread can occasionally invoke the
+ * function, too.
  * <p>
- * The <code>Output</code> can be anything you want. If you do not need an output: 
- * you can leave this empty and make your function return null. Non-null output
- * object are collected and will be passed back to the optional output Consumer
- * on the master thread. This could useful if you want to save several beans in
- * the master thread's transaction, or if you want to record results using
- * <code>logToolMessage()</code> (which should only be called on the master thread).
+ * The <code>Output</code> can be anything you want. If you do not need an
+ * output: you can leave this empty and make your function return null. Non-null
+ * output object are collected and will be passed back to the optional output
+ * Consumer on the master thread. This could useful if you want to save several
+ * beans in the master thread's transaction, or if you want to record results
+ * using <code>logToolMessage()</code> (which should only be called on the
+ * master thread).
  *
- * @param <Input> the object the iterator produces. This object is passed to into
- * the Function on different threads.
- * @param <Output> the output of a Function, which may be passed back to the master 
- * thread for consumption.
+ * @param <Input>
+ *            the object the iterator produces. This object is passed to into
+ *            the Function on different threads.
+ * @param <Output>
+ *            the output of a Function, which may be passed back to the master
+ *            thread for consumption.
  */
 public class ThreadedBrokerIterator<Input, Output> {
-	
+
 	public static class ThreadedException extends RuntimeException {
 		private static final long serialVersionUID = 1L;
 
 		Map<Exception, Object> exceptions;
-		
+
 		/**
-		 * @param exceptions a map of exceptions to the iterator value that triggered them.
+		 * @param exceptions
+		 *            a map of exceptions to the iterator value that triggered
+		 *            them.
 		 */
 		public ThreadedException(Map<Exception, Object> exceptions) {
 			this.exceptions = Collections.unmodifiableMap(exceptions);
-			//let the natural caused-by chain be as informative as possible
-			if(exceptions.size()==1)
+			// let the natural caused-by chain be as informative as possible
+			if (exceptions.size() == 1)
 				initCause(exceptions.keySet().iterator().next());
 		}
 
@@ -80,92 +87,105 @@ public class ThreadedBrokerIterator<Input, Output> {
 			return exceptions;
 		}
 	}
-	
+
 	/**
-	 * This is one of the helper threads that listens for inputs and applies the function.
+	 * This is one of the helper threads that listens for inputs and applies the
+	 * function.
 	 * <p>
-	 * Helper threads need to be 100% sure they will exit. (We don't want hundreds of orphaned threads
-	 * on the server someday.) This thread has three possible conditions under which it will exit:
-	 * <ul><li>When completedIterator is toggled from false to true. This is the ideal/typical exit
-	 * condition.</li>
-	 * <li>When {@link #isPollTimeout(long)} indicates grabbing a new Input off the queue has 
-	 * taken too long. This generally shouldn't happen unless something else is frozen/blocked. If all helper 
-	 * threads shut down because something just naturally took a VERY long time to complete, then the 
-	 * ThreadedBrokerIterator will also eventually shut down when it times out after attempting to pass
-	 * Inputs off to the helper threads.</li>
-	 * <li>When the tool's master thread is no longer alive. This is considered a fail-safe. This
-	 * should never be needed, because the completedIterator boolean should be safely changed inside
-	 * a finally block.</li></ul>
+	 * Helper threads need to be 100% sure they will exit. (We don't want
+	 * hundreds of orphaned threads on the server someday.) This thread has
+	 * three possible conditions under which it will exit:
+	 * <ul>
+	 * <li>When completedIterator is toggled from false to true. This is the
+	 * ideal/typical exit condition.</li>
+	 * <li>When {@link #isPollTimeout(long)} indicates grabbing a new Input off
+	 * the queue has taken too long. This generally shouldn't happen unless
+	 * something else is frozen/blocked. If all helper threads shut down because
+	 * something just naturally took a VERY long time to complete, then the
+	 * ThreadedBrokerIterator will also eventually shut down when it times out
+	 * after attempting to pass Inputs off to the helper threads.</li>
+	 * <li>When the tool's master thread is no longer alive. This is considered
+	 * a fail-safe. This should never be needed, because the completedIterator
+	 * boolean should be safely changed inside a finally block.</li>
+	 * </ul>
 	 * <p>
 	 */
 	class HelperThread extends Thread {
 		Thread masterThread;
-		
+
 		public HelperThread(int index) {
-			super(Thread.currentThread().getName()+"-helper-"+index);
+			super(Thread.currentThread().getName() + "-helper-" + index);
 			masterThread = Thread.currentThread();
 		}
 
 		@Override
-    	public void run() {
+		public void run() {
 			long lastInput = System.currentTimeMillis();
 			boolean keepRunning = true;
 			boolean inputQueueStoppedAcceptingAdditions = false;
-    		while(keepRunning) {
-    			if(!masterThread.isAlive()) {
+			while (keepRunning) {
+				if (!masterThread.isAlive()) {
 					keepRunning = false;
 					return;
-    			}
+				}
 
-				synchronized(exceptions) {
-					//the master thread should throw an exception, we should just abort
-					if(!exceptions.isEmpty())
+				synchronized (exceptions) {
+					// the master thread should throw an exception, we should
+					// just abort
+					if (!exceptions.isEmpty())
 						return;
 				}
-    			
-    			// I originally tried calls like inputQueue.poll(50, TimeUnit.MILLIS), but for some reason
-    			// when I used those calls and killed the master tool: this helper thread seemed to get
-    			// locked and never recover. I didn't figure out exactly why, but switching to this
-    			// poll() method appeared to resolve it:
-    			Input input = inputQueue.poll();
-    			
-    			try {
-        			if(input!=null) {
-        				lastInput = System.currentTimeMillis();
-	        			Output output = function.apply(createBroker(), input);
-	        			if(output!=null) {
-		        			synchronized(outputQueue) {
-		        				outputQueue.add(output);
-		        			}
-	        			}
-        			} else {
-        				if(inputQueueStoppedAcceptingAdditions) {
-        					// First we noticed completedIterator is true, then we 
-        					// drained the inputQueue. We can end this thread now.
-        					return;
-        				}
-        				
-        				long elapsed = System.currentTimeMillis() - lastInput;
-        				if(isPollTimeout(elapsed)) {
-        					keepRunning = false;
-	        				throw new RuntimeException("Unexpectedly slow input queue: "+elapsed+" ms");
-        				}
-        			}
-    			} catch(Exception e) {
-    				if(handleUncaughtException(e)) {
-    					synchronized(exceptions) {
-    						exceptions.put(e, input);
-    					}
-    				}
-    			}
-				
-				if(completedIterator.get()) {
+
+				// I originally tried calls like inputQueue.poll(50,
+				// TimeUnit.MILLIS), but for some reason
+				// when I used those calls and killed the master tool: this
+				// helper thread seemed to get
+				// locked and never recover. I didn't figure out exactly why,
+				// but switching to this
+				// poll() method appeared to resolve it:
+				Input input = inputQueue.poll();
+
+				try {
+					if (input != null) {
+						lastInput = System.currentTimeMillis();
+						Output output = function.apply(createBroker(), input);
+						if (output != null) {
+							synchronized (outputQueue) {
+								outputQueue.add(output);
+							}
+						}
+					} else {
+						if (inputQueueStoppedAcceptingAdditions) {
+							// First we noticed completedIterator is true, then
+							// we
+							// drained the inputQueue. We can end this thread
+							// now.
+							return;
+						}
+
+						long elapsed = System.currentTimeMillis() - lastInput;
+						if (isPollTimeout(elapsed)) {
+							keepRunning = false;
+							throw new RuntimeException(
+									"Unexpectedly slow input queue: " + elapsed
+											+ " ms");
+						}
+					}
+				} catch (Exception e) {
+					if (handleUncaughtException(e)) {
+						synchronized (exceptions) {
+							exceptions.put(e, input);
+						}
+					}
+				}
+
+				if (completedIterator.get()) {
 					inputQueueStoppedAcceptingAdditions = true;
 				}
-    		}
-    	}
+			}
+		}
 	}
-	
+
 	/**
 	 * Maps an Exception to the input value that triggered it.
 	 * <p>
@@ -178,115 +198,134 @@ public class ThreadedBrokerIterator<Input, Output> {
 	protected Consumer<Output> outputListener;
 	private ArrayBlockingQueue<Input> inputQueue;
 	protected List<Output> outputQueue = new LinkedList<>();
-    private AtomicBoolean completedIterator = new AtomicBoolean(false);
-    private Thread[] threads;
+	private AtomicBoolean completedIterator = new AtomicBoolean(false);
+	private Thread[] threads;
 
-    /**
-     * Create a new ThreadedIteratorHelper.
-     * 
-	 * @param privilegeSet a PrivilegeSet used to create additional ModelBrokers.
-	 * @param function a function that accepts the iterator's values and produces output. This function
-	 *        will probably be called on helper threads, but if threadCount is 0 then this function will be called
-	 *        on the master thread.
-	 * @param threadCount the total number of threads, including the current thread, to use to evaluate the query's
-	 * results. For example: if this is 10, then 9 additional threads will be created. This must be one or greater.
-	 * This is also the number of additional X2Brokers that may be created at any given time, so you can
-	 * think of this number as the number of additional database connections this object will use.
-	 * <p>
-	 * If this is one then the iterator results are processed on the master thread and no new threads are created.
-	 * @param outputConsumer an optional consumer. If this is non-null, then this consumer is given all the Outputs the
-	 * function creates. The consumer is only invoked on the master thread.
-     */
+	/**
+	 * Create a new ThreadedIteratorHelper.
+	 * 
+	 * @param privilegeSet
+	 *            a PrivilegeSet used to create additional ModelBrokers.
+	 * @param function
+	 *            a function that accepts the iterator's values and produces
+	 *            output. This function will probably be called on helper
+	 *            threads, but if threadCount is 0 then this function will be
+	 *            called on the master thread.
+	 * @param threadCount
+	 *            the total number of threads, including the current thread, to
+	 *            use to evaluate the query's results. For example: if this is
+	 *            10, then 9 additional threads will be created. This must be
+	 *            one or greater. This is also the number of additional
+	 *            X2Brokers that may be created at any given time, so you can
+	 *            think of this number as the number of additional database
+	 *            connections this object will use.
+	 *            <p>
+	 *            If this is one then the iterator results are processed on the
+	 *            master thread and no new threads are created.
+	 * @param outputConsumer
+	 *            an optional consumer. If this is non-null, then this consumer
+	 *            is given all the Outputs the function creates. The consumer is
+	 *            only invoked on the master thread.
+	 */
 	public ThreadedBrokerIterator(PrivilegeSet privilegeSet,
-			BiFunction<X2Broker, Input, Output> function, 
-			int threadCount,Consumer<Output> outputListener) {
+			BiFunction<X2Broker, Input, Output> function, int threadCount,
+			Consumer<Output> outputListener) {
 		Objects.requireNonNull(privilegeSet);
 		Objects.requireNonNull(function);
-		if(!(threadCount>=1))
-			throw new IllegalArgumentException("threadCount ("+threadCount+") must be at least one");
+		if (!(threadCount >= 1))
+			throw new IllegalArgumentException("threadCount (" + threadCount
+					+ ") must be at least one");
 		this.privilegeSet = privilegeSet;
 		this.function = function;
-		
+
 		// Our master thread (that puts things on the queue) will automatically
 		// switch to become a worker thread if the queue reaches its capacity.
 		// Therefore we want the queue to be 3x the number of threads:
 		// if the primary thread switches to a worker thread we want there to be
 		// plenty (at *least* 2x) elements for other worker threads to work on
 		// before the primary thread resumes building up the queue again
-		int queueCapacity = Math.max(10, threadCount*3);
-		
+		int queueCapacity = Math.max(10, threadCount * 3);
+
 		// ... this assumes each invocation of the function is similar in
 		// weight. If the master thread picks up a task that's 10x more work
 		// than most other tasks: this model still falls apart.
-		
-		inputQueue = threadCount>0 ? new ArrayBlockingQueue<Input>(queueCapacity) : null;
-		threads = new Thread[threadCount-1];
-		for(int a = 0; a<threads.length; a++) {
+
+		inputQueue = threadCount > 0 ? new ArrayBlockingQueue<Input>(
+				queueCapacity) : null;
+		threads = new Thread[threadCount - 1];
+		for (int a = 0; a < threads.length; a++) {
 			threads[a] = new HelperThread(a);
 			threads[a].start();
 		}
 		this.outputListener = outputListener;
 	}
-	
+
 	/**
 	 * Execute the given query.
 	 * 
-	 * @param broker the broker used to iterate over the query.
-	 * @param query the query to pass to the broker.
+	 * @param broker
+	 *            the broker used to iterate over the query.
+	 * @param query
+	 *            the query to pass to the broker.
 	 */
 	public void run(X2Broker broker, Query query) {
 		Objects.requireNonNull(broker);
 		Objects.requireNonNull(query);
-		
+
 		QueryIterator iter = broker.getIteratorByQuery(query);
 		run(iter);
 	}
-	
+
 	/**
 	 * Iterate over all the elements in an iterator.
 	 * 
-	 * @param iter the iterator to walk through. If this is an AutoCloseable then it is
-	 * automatically closed on completion.
+	 * @param iter
+	 *            the iterator to walk through. If this is an AutoCloseable then
+	 *            it is automatically closed on completion.
 	 */
 	public synchronized void run(Iterator iter) {
-		//this method is synchronized, so we'll only edit completedIterator on one thread
+		// this method is synchronized, so we'll only edit completedIterator on
+		// one thread
 		completedIterator.set(false);
-		
-		try(AutoCloseable z = getAutoCloseable(iter)) {
-			while(iter.hasNext()) {
+
+		try (AutoCloseable z = getAutoCloseable(iter)) {
+			while (iter.hasNext()) {
 				ThreadUtils.checkInterrupt();
-				
-				synchronized(exceptions) {
-					if(!exceptions.isEmpty()) {
+
+				synchronized (exceptions) {
+					if (!exceptions.isEmpty()) {
 						throw new ThreadedException(exceptions);
 					}
 				}
-				
+
 				Input value = (Input) iter.next();
-				
-				if(inputQueue==null) {
+
+				if (inputQueue == null) {
 					runFunctionOnMasterThread(value);
 				} else {
-	        		if(!inputQueue.offer(value)) {
-	        			// If all our other threads are busy: then we become a worker thread.
-	        			// We made sure the inputQueue was large enough that the other threads
-	        			// should have something to work on if they finish their task
+					if (!inputQueue.offer(value)) {
+						// If all our other threads are busy: then we become a
+						// worker thread.
+						// We made sure the inputQueue was large enough that the
+						// other threads
+						// should have something to work on if they finish their
+						// task
 						runFunctionOnMasterThread(value);
 					}
 				}
-				
+
 				flushOutputs();
 			}
-		} catch(CancellationException e) {
+		} catch (CancellationException e) {
 			inputQueue.clear();
 			throw e;
-		} catch(ThreadedException e) {
+		} catch (ThreadedException e) {
 			inputQueue.clear();
 			throw e;
-		} catch(Exception e) {
-			//this would be an extremely rare case
-			if(handleUncaughtException(e)) {
-				synchronized(exceptions) {
+		} catch (Exception e) {
+			// this would be an extremely rare case
+			if (handleUncaughtException(e)) {
+				synchronized (exceptions) {
 					exceptions.put(e, null);
 				}
 				throw new ThreadedException(exceptions);
@@ -294,68 +333,73 @@ public class ThreadedBrokerIterator<Input, Output> {
 		} finally {
 			completedIterator.set(true);
 		}
-		
-		// we stopped adding things to our queue, but we need to make sure our helper threads addressed them all:
-		while(getActiveHelperThreadCount()>0) {
+
+		// we stopped adding things to our queue, but we need to make sure our
+		// helper threads addressed them all:
+		while (getActiveHelperThreadCount() > 0) {
 			ThreadUtils.checkInterrupt();
-			
-			synchronized(exceptions) {
-				if(!exceptions.isEmpty()) {
+
+			synchronized (exceptions) {
+				if (!exceptions.isEmpty()) {
 					throw new ThreadedException(exceptions);
 				}
 			}
-			
+
 			Input input = inputQueue.poll();
-			if(input!=null) {
+			if (input != null) {
 				runFunctionOnMasterThread(input);
 			} else {
-				//out queue is empty, but helper threads are still wrapping up. So we wait:
+				// out queue is empty, but helper threads are still wrapping up.
+				// So we wait:
 				try {
 					Thread.sleep(10);
-				} catch(InterruptedException e) {}
+				} catch (InterruptedException e) {
+				}
 			}
 		}
-		
+
 		flushOutputs();
 
-		synchronized(exceptions) {
-			if(!exceptions.isEmpty()) {
+		synchronized (exceptions) {
+			if (!exceptions.isEmpty()) {
 				throw new ThreadedException(exceptions);
 			}
 		}
 	}
-	
+
 	private void runFunctionOnMasterThread(Input value) {
 		try {
 			Output output = function.apply(createBroker(), value);
-			if(output!=null) {
-				synchronized(outputQueue) {
+			if (output != null) {
+				synchronized (outputQueue) {
 					outputQueue.add(output);
 				}
 			}
-		} catch(Exception e) {
-			if(handleUncaughtException(e)) {
-				synchronized(exceptions) {
+		} catch (Exception e) {
+			if (handleUncaughtException(e)) {
+				synchronized (exceptions) {
 					exceptions.put(e, value);
 				}
 			}
 		}
 	}
-	
+
 	/**
-	 * This either casts the argument to an AutoCloseable, or it creates a dummy AutoCloseable.
+	 * This either casts the argument to an AutoCloseable, or it creates a dummy
+	 * AutoCloseable.
 	 */
 	private AutoCloseable getAutoCloseable(Iterator iter) {
-		if(iter instanceof AutoCloseable) {
+		if (iter instanceof AutoCloseable) {
 			return (AutoCloseable) iter;
 		}
 		return new AutoCloseable() {
 
-				@Override
-				public void close() {}
+			@Override
+			public void close() {
+			}
 		};
 	}
-	
+
 	/**
 	 * Create a new X2Broker for a Thread.
 	 */
@@ -363,64 +407,66 @@ public class ThreadedBrokerIterator<Input, Output> {
 		X2Broker newBroker = new ModelBroker(privilegeSet);
 		return newBroker;
 	}
-	
+
 	/**
-	 * Pass Output objects to the optional output consumer. This method
-	 * should only be called on the master thread.
+	 * Pass Output objects to the optional output consumer. This method should
+	 * only be called on the master thread.
 	 */
 	private void flushOutputs() {
 		Object[] outputArray;
-		synchronized(outputQueue) {
+		synchronized (outputQueue) {
 			outputArray = outputQueue.toArray();
 			outputQueue.clear();
 		}
-		if(outputListener!=null) {
-			for(int a = 0; a<outputArray.length; a++) {
+		if (outputListener != null) {
+			for (int a = 0; a < outputArray.length; a++) {
 				try {
-					outputListener.accept( (Output) outputArray[a]);
-				} catch(Exception e) {
+					outputListener.accept((Output) outputArray[a]);
+				} catch (Exception e) {
 					handleUncaughtException(e);
 				}
 			}
 		}
 	}
-	
+
 	/**
 	 * This method is notified when there is an exception.
 	 * <p>
 	 * The default implementation logs the exception to AppGlobals.
 	 * 
-	 * @return true if this exception should cause all threads to abort
-	 * and stop polling more inputs. In this case all threads should
-	 * finish their current tasks, but not pick up any more tasks. The master
-	 * thread should throw a ThreadedException.
-	 * <p>
-	 * If this returns false: all threads continue as usual.
-	 * <p>
-	 * The default implementation returns true.
+	 * @return true if this exception should cause all threads to abort and stop
+	 *         polling more inputs. In this case all threads should finish their
+	 *         current tasks, but not pick up any more tasks. The master thread
+	 *         should throw a ThreadedException.
+	 *         <p>
+	 *         If this returns false: all threads continue as usual.
+	 *         <p>
+	 *         The default implementation returns true.
 	 */
 	protected boolean handleUncaughtException(Exception e) {
-		AppGlobals.getLog().log(Level.SEVERE, LoggerUtils.convertThrowableToString(e));
+		AppGlobals.getLog().log(Level.SEVERE,
+				LoggerUtils.convertThrowableToString(e));
 		return true;
 	}
-	
+
 	/**
-	 * Return the number of milliseconds a consumer thread will wait for new Input before throwing an exception.
-	 * The default value of 10 minutes.
+	 * Return the number of milliseconds a consumer thread will wait for new
+	 * Input before throwing an exception. The default value of 10 minutes.
 	 */
 	protected boolean isPollTimeout(long elapsedMillis) {
-		return elapsedMillis > 1000*60*10;
+		return elapsedMillis > 1000 * 60 * 10;
 	}
-	
+
 	/**
 	 * Return the number of active helper threads.
 	 * <p>
-	 * This is used during shutdown/cleanup to wait for all the consumer threads to exit.
+	 * This is used during shutdown/cleanup to wait for all the consumer threads
+	 * to exit.
 	 */
 	protected int getActiveHelperThreadCount() {
 		int ctr = 0;
-		for(Thread thread : threads) {
-			if(thread.isAlive())
+		for (Thread thread : threads) {
+			if (thread.isAlive())
 				ctr++;
 		}
 		return ctr;

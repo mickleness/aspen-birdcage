@@ -19,7 +19,8 @@ import com.pump.data.operator.Operator;
 import com.pump.data.operator.Or;
 import com.pump.text.WildcardPattern;
 
-public class CriteriaToOperatorConverterImpl implements CriteriaToOperatorConverter {
+public class CriteriaToOperatorConverterImpl implements
+		CriteriaToOperatorConverter {
 
 	static WildcardPattern.Format sqlFormat = new WildcardPattern.Format();
 	static {

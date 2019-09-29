@@ -5,7 +5,7 @@ import org.apache.ojb.broker.query.Criteria;
 import com.pump.data.operator.Operator;
 
 /**
- * This converts org.apache.ojb.broker.query.Criterias into 
+ * This converts org.apache.ojb.broker.query.Criterias into
  * com.pump.data.operator.Operators (and back again).
  */
 public interface CriteriaToOperatorConverter {
