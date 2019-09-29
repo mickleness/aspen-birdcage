@@ -94,8 +94,9 @@ public class Dash {
 		}
 
 		@Override
-		protected void handleUncaughtException(Exception e) {
+		protected boolean handleUncaughtException(Exception e) {
 			dash.getUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), e);
+			return true;
 		}
 	}
 

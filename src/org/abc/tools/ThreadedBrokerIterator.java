@@ -1,8 +1,11 @@
 package org.abc.tools;
 
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -55,6 +58,29 @@ import com.x2dev.utils.ThreadUtils;
  */
 public class ThreadedBrokerIterator<Input, Output> {
 	
+	public static class ThreadedException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		Map<Exception, Object> exceptions;
+		
+		/**
+		 * @param exceptions a map of exceptions to the iterator value that triggered them.
+		 */
+		public ThreadedException(Map<Exception, Object> exceptions) {
+			this.exceptions = Collections.unmodifiableMap(exceptions);
+			//let the natural caused-by chain be as informative as possible
+			if(exceptions.size()==1)
+				initCause(exceptions.keySet().iterator().next());
+		}
+
+		/**
+		 * Return a map of exceptions to the iterator value that triggered them.
+		 */
+		public Map<Exception, Object> getExceptions() {
+			return exceptions;
+		}
+	}
+	
 	/**
 	 * This is one of the helper threads that listens for inputs and applies the function.
 	 * <p>
@@ -86,18 +112,24 @@ public class ThreadedBrokerIterator<Input, Output> {
 			boolean keepRunning = true;
 			boolean inputQueueStoppedAcceptingAdditions = false;
     		while(keepRunning) {
+    			if(!masterThread.isAlive()) {
+					keepRunning = false;
+					return;
+    			}
+
+				synchronized(exceptions) {
+					//the master thread should throw an exception, we should just abort
+					if(!exceptions.isEmpty())
+						return;
+				}
+    			
+    			// I originally tried calls like inputQueue.poll(50, TimeUnit.MILLIS), but for some reason
+    			// when I used those calls and killed the master tool: this helper thread seemed to get
+    			// locked and never recover. I didn't figure out exactly why, but switching to this
+    			// poll() method appeared to resolve it:
+    			Input input = inputQueue.poll();
+    			
     			try {
-        			if(!masterThread.isAlive()) {
-    					keepRunning = false;
-        				throw new RuntimeException("Aborting "+getName()+" because the master thread ("+masterThread.getName()+") is not alive.");
-        			}
-        			
-        			// I originally tried calls like inputQueue.poll(50, TimeUnit.MILLIS), but for some reason
-        			// when I used those calls and killed the master tool: this helper thread seemed to get
-        			// locked and never recover. I didn't figure out exactly why, but switching to this
-        			// poll() method appeared to resolve it:
-        			Input input = inputQueue.poll();
-        			
         			if(input!=null) {
         				lastInput = System.currentTimeMillis();
 	        			Output output = function.apply(createBroker(), input);
@@ -118,18 +150,29 @@ public class ThreadedBrokerIterator<Input, Output> {
         					keepRunning = false;
 	        				throw new RuntimeException("Unexpectedly slow input queue: "+elapsed+" ms");
         				}
-        				
-        				if(completedIterator.get()) {
-        					inputQueueStoppedAcceptingAdditions = true;
-        				}
         			}
     			} catch(Exception e) {
-    				handleUncaughtException(e);
+    				if(handleUncaughtException(e)) {
+    					synchronized(exceptions) {
+    						exceptions.put(e, input);
+    					}
+    				}
     			}
+				
+				if(completedIterator.get()) {
+					inputQueueStoppedAcceptingAdditions = true;
+				}
     		}
     	}
 	}
 	
+	/**
+	 * Maps an Exception to the input value that triggered it.
+	 * <p>
+	 * When this is non-empty, the master thread should throw an exception.
+	 * Calls to this map should be synchronized against this map.
+	 */
+	protected Map<Exception, Object> exceptions = new LinkedHashMap<>();
 	protected PrivilegeSet privilegeSet;
 	protected BiFunction<X2Broker, Input, Output> function;
 	protected Consumer<Output> outputListener;
@@ -213,6 +256,12 @@ public class ThreadedBrokerIterator<Input, Output> {
 			while(iter.hasNext()) {
 				ThreadUtils.checkInterrupt();
 				
+				synchronized(exceptions) {
+					if(!exceptions.isEmpty()) {
+						throw new ThreadedException(exceptions);
+					}
+				}
+				
 				Input value = (Input) iter.next();
 				
 				if(inputQueue==null) {
@@ -229,19 +278,33 @@ public class ThreadedBrokerIterator<Input, Output> {
 				flushOutputs();
 			}
 		} catch(CancellationException e) {
-			for(Thread thread : threads) {
-				thread.interrupt();
-			}
-			handleUncaughtException(e);
+			inputQueue.clear();
+			throw e;
+		} catch(ThreadedException e) {
+			inputQueue.clear();
 			throw e;
 		} catch(Exception e) {
-			handleUncaughtException(e);
+			//this would be an extremely rare case
+			if(handleUncaughtException(e)) {
+				synchronized(exceptions) {
+					exceptions.put(e, null);
+				}
+				throw new ThreadedException(exceptions);
+			}
 		} finally {
 			completedIterator.set(true);
 		}
 		
 		// we stopped adding things to our queue, but we need to make sure our helper threads addressed them all:
 		while(getActiveHelperThreadCount()>0) {
+			ThreadUtils.checkInterrupt();
+			
+			synchronized(exceptions) {
+				if(!exceptions.isEmpty()) {
+					throw new ThreadedException(exceptions);
+				}
+			}
+			
 			Input input = inputQueue.poll();
 			if(input!=null) {
 				runFunctionOnMasterThread(input);
@@ -254,6 +317,12 @@ public class ThreadedBrokerIterator<Input, Output> {
 		}
 		
 		flushOutputs();
+
+		synchronized(exceptions) {
+			if(!exceptions.isEmpty()) {
+				throw new ThreadedException(exceptions);
+			}
+		}
 	}
 	
 	private void runFunctionOnMasterThread(Input value) {
@@ -265,7 +334,11 @@ public class ThreadedBrokerIterator<Input, Output> {
 				}
 			}
 		} catch(Exception e) {
-			handleUncaughtException(e);
+			if(handleUncaughtException(e)) {
+				synchronized(exceptions) {
+					exceptions.put(e, value);
+				}
+			}
 		}
 	}
 	
@@ -316,9 +389,19 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 * This method is notified when there is an exception.
 	 * <p>
 	 * The default implementation logs the exception to AppGlobals.
+	 * 
+	 * @return true if this exception should cause all threads to abort
+	 * and stop polling more inputs. In this case all threads should
+	 * finish their current tasks, but not pick up any more tasks. The master
+	 * thread should throw a ThreadedException.
+	 * <p>
+	 * If this returns false: all threads continue as usual.
+	 * <p>
+	 * The default implementation returns true.
 	 */
-	protected void handleUncaughtException(Exception e) {
+	protected boolean handleUncaughtException(Exception e) {
 		AppGlobals.getLog().log(Level.SEVERE, LoggerUtils.convertThrowableToString(e));
+		return true;
 	}
 	
 	/**
