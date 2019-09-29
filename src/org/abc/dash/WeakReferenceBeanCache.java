@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import com.follett.fsc.core.k12.beans.X2BaseBean;
+import com.pump.util.WeakValueMap;
 
 /**
  * This simple cache keeps a WeakReference to beans.
