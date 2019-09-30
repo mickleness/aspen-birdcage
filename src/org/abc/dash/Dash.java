@@ -1325,9 +1325,14 @@ public class Dash {
 	 * have to clear all our address-related cached info. Then if you rollback
 	 * your transaction: we need to clear all our address-related cached info
 	 * again.)
+	 * 
+	 * @param beanType the type of bean that was modified. If this is null
+	 * then this method immediately returns.
 	 */
 	public void modifyBeanRecord(Class beanType) {
-		Objects.requireNonNull(beanType);
+		if(beanType==null)
+			return;
+		
 		synchronized (modifiedBeanTypes) {
 			modifiedBeanTypes.add(beanType);
 		}

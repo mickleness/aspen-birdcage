@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 
 import org.apache.ojb.broker.PersistenceBroker;
@@ -20,18 +21,21 @@ import com.x2dev.utils.ThreadUtils;
  * <p>
  * This may pull data from two sources: a predefined collection of beans and/or
  * a QueryIterator.
+ * <p>
+ * This iterator is not thread-safe; it is assumed this will only be used on
+ * one thread.
  */
 public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 
 	/**
-	 * This listener is notified when an iterator closes.
+	 * This listener is notified when a QueryIteratorDash closes.
 	 */
-	static interface CloseListener {
+	public static interface CloseListener {
 		/**
 		 * This method is invoked when an iterator closes.
 		 * 
 		 * @param returnCount
-		 *            the number of times this iterator produced results.
+		 *            the number of times this iterator produced a value.
 		 * @param hasNext
 		 *            whether this iterator's {@link Iterator#hasNext()} method
 		 *            indicated there were results remaining when this iterator
@@ -160,7 +164,7 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 		}
 
 		if (beans.size() == 0)
-			return null;
+			throw new NoSuchElementException();
 
 		Iterator<X2BaseBean> beanIter = beans.iterator();
 		X2BaseBean returnValue = beanIter.next();

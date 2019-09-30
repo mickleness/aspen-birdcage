@@ -79,11 +79,12 @@ public class WeakReferenceBeanCache {
 	}
 
 	/**
-	 * Return a bean based on its class and oid, or return null.
+	 * Return a bean based on its class and oid, or return null if it is not
+	 * in our cache.
 	 * 
 	 * @param beanType
 	 *            the optional bean type. This is highly recommended, but it
-	 *            will be automatically resolved based on the oid if left null.
+	 *            will be automatically resolved based on the oid if it is null.
 	 * @param oid
 	 *            the bean oid to look up. If this is null then this method
 	 *            immediately returns null.
@@ -150,8 +151,11 @@ public class WeakReferenceBeanCache {
 	 * Clear all data related to a specific bean type from this cache.
 	 */
 	public void clear(Class<?> beanType) {
+		if(beanType==null)
+			return;
+		
 		synchronized (this) {
-			WeakValueMap<String, X2BaseBean> classCache = cache.get(beanType);
+			WeakValueMap<String, X2BaseBean> classCache = cache.remove(beanType);
 			if (classCache == null)
 				return;
 			classCache.clear();

@@ -28,6 +28,22 @@ import com.follett.fsc.core.k12.business.X2Broker;
 import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.ThreadUtils;
 
+/**
+ * This implements the BrokerDash (and all the X2Broker methods).
+ * <p>
+ * Certain calls are intercepted/optimized, and all other calls are
+ * delegated to an existing X2Broker.
+ * <p>
+ * This is implemented dynamically (using an InvocationHandler) because
+ * we assume methods will continue to be added to the X2Broker interface
+ * over time. If we created a class that actually implemented X2Broker:
+ * then our class would be missing methods as the X2Broker is enhanced over
+ * time. This approach, by contrast, should support new methods because
+ * it will just pass anything it doesn't recognize to its delegate.
+ * <p>
+ * Like all brokers: this object is not thread-safe; it should only
+ * be used on one thread at a time.
+ */
 class DashInvocationHandler implements InvocationHandler {
 	static RuntimeException constructionException;
 	static Method method_getIteratorByQuery;
@@ -98,6 +114,9 @@ class DashInvocationHandler implements InvocationHandler {
 		}
 	}
 
+	/**
+	 * This indents (pads) LogRecord messages a few spaces.
+	 */
 	static class IndentionHandler extends Handler {
 
 		int spaces = 2;
@@ -131,6 +150,13 @@ class DashInvocationHandler implements InvocationHandler {
 	boolean active = initialized;
 	Dash dash;
 
+	/**
+	 * Create a new DashInvocationHandler.
+	 * 
+	 * @param broker the broker all requests are eventually passed to if we
+	 * cannot optimize them.
+	 * @param dash the Dash used to manage the cached layer/data.
+	 */
 	DashInvocationHandler(X2Broker broker, Dash dash) {
 		if (constructionException != null)
 			throw constructionException;
@@ -139,22 +165,8 @@ class DashInvocationHandler implements InvocationHandler {
 		this.broker = broker;
 		this.dash = dash;
 	}
-
-	protected void handleException(Exception e) {
-		Exception e2 = new Exception(
-				"An error occurred using the Dash cache architecture, so it is being deactivated.",
-				e);
-		UncaughtExceptionHandler ueh = dash.getUncaughtExceptionHandler();
-		if (ueh != null) {
-			ueh.uncaughtException(Thread.currentThread(), e2);
-		}
-
-		Logger log = dash.getLog();
-		if (log != null && log.isLoggable(Level.WARNING))
-			log.warning(LoggerUtils.convertThrowableToString(e2));
-
-		active = false;
-	}
+	
+	private IndentionHandler indentHandler;
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args)
@@ -162,62 +174,74 @@ class DashInvocationHandler implements InvocationHandler {
 		ThreadUtils.checkInterrupt();
 
 		Logger log = dash.getLog();
-
-		// handle methods unique to the BrokerDash interface:
-
-		if (method_getDash.equals(method)) {
-			return dash;
-		} else if (method.getName().equals("setDashActive")) {
-			if (log != null && log.isLoggable(Level.FINE)) {
-				log.fine("setDashActive " + args[0]);
-			}
-			active = ((Boolean) args[0]).booleanValue();
-			return Void.TYPE;
-		} else if (method.getName().equals("isDashActive")) {
-			return active;
+		boolean indentHandlerCreated;
+		if(indentHandler==null) {
+			indentHandler = indentLog(log);
+			indentHandlerCreated = indentHandler!=null;
+		} else {
+			indentHandlerCreated = false;
 		}
-
-		IndentionHandler indentHandler = indentLog(log);
 		try {
+			logMethod(Level.FINER, method, args, null);
+			
+			// handle methods unique to the BrokerDash interface:
+			if (method_getDash.equals(method)) {
+				return dash;
+			} else if (method.getName().equals("setDashActive")) {
+				active = ((Boolean) args[0]).booleanValue();
+				return Void.TYPE;
+			} else if (method.getName().equals("isDashActive")) {
+				return active;
+			}
+			
 			// if possible: intercept methods using our caching model/layer
-
 			if (active) {
 				try {
-					return invokeCached(proxy, method, args, log, indentHandler);
+					return invokeCached(proxy, method, args);
+				} catch(CancellationException e) {
+					throw e;
 				} catch (Exception e) {
-					handleException(e);
-					if (e instanceof CancellationException)
-						throw (CancellationException) e;
+					Exception e2 = new Exception(
+							"An error occurred using the Dash cache architecture, so it is being deactivated.",
+							e);
+					UncaughtExceptionHandler ueh = dash.getUncaughtExceptionHandler();
+					if (ueh != null) {
+						ueh.uncaughtException(Thread.currentThread(), e2);
+					}
+
+					if (log != null && log.isLoggable(Level.WARNING))
+						log.warning(LoggerUtils.convertThrowableToString(e2));
+
+					active = false;
 				}
 			}
 
 			// ... if that fails: invoke the method without our caching
 			// model/layer:
 
-			if (log != null && log.isLoggable(Level.FINEST)
-					&& !method.getName().equals("getPersistenceKey")) {
-				if (args == null || args.length == 0) {
-					log.finest(method.getName());
-				} else {
-					log.finest(method.getName() + " " + Arrays.asList(args));
-				}
-			}
-
 			long t = System.currentTimeMillis();
 			Object returnValue = method.invoke(broker, args);
 			t = System.currentTimeMillis() - t;
-			if (t > 10 && log != null && log.isLoggable(Level.FINEST)
-					&& !method.getName().equals("getPersistenceKey")) {
-				log.finest(method.getName() + " (ended)");
+			
+			if (t > 10 && log != null) {
+				logMethod(Level.FINEST, method, args, "(ended)");
 			}
 
 			return returnValue;
 		} finally {
-			if (indentHandler != null)
+			if(indentHandlerCreated) {
 				log.removeHandler(indentHandler);
+				indentHandler = null;
+			}
 		}
 	}
 
+	/**
+	 * Install an IndentionHandler as the zeroeth handler on our Log
+	 * (so it indents messages before any other Handlers are notified).
+	 * 
+	 * @return the IndentionHandler, or null if it couldn't be created
+	 */
 	private IndentionHandler indentLog(Logger log) {
 		if (log == null)
 			return null;
@@ -235,39 +259,47 @@ class DashInvocationHandler implements InvocationHandler {
 		return indentHandler;
 	}
 
+	/**
+	 * Invoke a method using the Dash caching model.
+	 */
 	@SuppressWarnings({ "rawtypes" })
-	protected Object invokeCached(Object proxy, Method method, Object[] args,
-			Logger log, IndentionHandler indention) throws Throwable {
+	protected Object invokeCached(Object proxy, Method method, Object[] args) throws Throwable {
+		// our first rule here should be: do no harm.
+		// So if someone passes null in as an argument: we should just skip
+		// over our caching implementation. If the parent broker wants to throw
+		// a NPE: that's great. But adding this broker implementation shouldn't
+		// risk breaking anything that existing brokers handle without complaint.
+		
+		// If something doesn't explicitly return in these if-then clauses:
+		// then it falls to the bottom of this method that always defaults to
+		// delegating the method to the original X2broker.
+
 		if (method_getBeanByOid.equals(method)) {
-			if (log != null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName() + " " + Arrays.asList(args));
+			Class beanType = (Class) args[0];
+			String beanOid = (String) args[1];
+			if(beanType!=null && beanOid!=null) {
+				X2BaseBean bean = dash.getBeanByOid(broker.getPersistenceKey(),
+						beanType, beanOid);
+				if (bean != null)
+					return bean;
 			}
-			indention.increase();
-			X2BaseBean bean = dash.getBeanByOid(broker.getPersistenceKey(),
-					(Class) args[0], (String) args[1]);
-			if (bean != null)
-				return bean;
 		} else if (method_getIteratorByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if (log != null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName() + " " + Arrays.asList(args));
-			}
-			indention.increase();
 			QueryByCriteria query = (QueryByCriteria) args[0];
-			active = false;
-			try {
-				QueryIterator returnValue = dash.createQueryIterator(
-						(X2Broker) proxy, query);
-				return returnValue;
-			} finally {
-				active = true;
+			if(query!=null) {
+				active = false;
+				try {
+					// use THIS broker (the proxy) just so we continue
+					// to benefit from potential logging
+					QueryIterator returnValue = dash.createQueryIterator(
+							(X2Broker) proxy, query);
+					return returnValue;
+				} finally {
+					active = true;
+				}
 			}
 		} else if (method_getBeanByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if (log != null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName() + " " + Arrays.asList(args));
-			}
-			indention.increase();
 			// pass through getIteratorByQuery to benefit from our caching
 			try (QueryIterator queryIter = (QueryIterator) invoke(proxy,
 					method_getIteratorByQuery, args)) {
@@ -277,10 +309,6 @@ class DashInvocationHandler implements InvocationHandler {
 			}
 		} else if (method_getCollectionByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if (log != null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName() + " " + Arrays.asList(args));
-			}
-			indention.increase();
 			// pass through getIteratorByQuery to benefit from our caching
 			try (QueryIterator queryIter = (QueryIterator) invoke(proxy,
 					method_getIteratorByQuery, args)) {
@@ -295,44 +323,53 @@ class DashInvocationHandler implements InvocationHandler {
 			}
 		} else if (method_getGroupedCollectionByQuery1.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			Object[] newArgs = new Object[] { args[0],
-					new String[] { (String) args[1] },
-					new int[] { ((Integer) args[2]).intValue() } };
-			return invoke(proxy, method_getGroupedCollectionByQuery2, newArgs);
+			String groupColumn = (String) args[1];
+			int initialMapSize = ((Integer) args[0]).intValue();
+			if(groupColumn!=null) {
+				Object[] newArgs = new Object[] { args[0],
+						new String[] { groupColumn },
+						new int[] { initialMapSize } };
+				return invoke(proxy, method_getGroupedCollectionByQuery2, newArgs);
+			}
 		} else if (method_getGroupedCollectionByQuery2.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if (log != null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName() + " " + Arrays.asList(args));
-			}
-			indention.increase();
 			QueryByCriteria query = (QueryByCriteria) args[0];
 			String[] columns = (String[]) args[1];
 			int[] mapSizes = (int[]) args[2];
-			return createNestedMap(proxy, query, columns, mapSizes, true);
+			if(query!=null && columns!=null && mapSizes!=null) {
+				return createNestedMap(proxy, query, columns, mapSizes, true);
+			}
 		} else if (method_getMapByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			Object[] newArgs = new Object[] { args[0],
-					new String[] { (String) args[1] },
-					new int[] { ((Integer) args[2]).intValue() } };
-			return invoke(proxy, method_getNestedMapByQuery2, newArgs);
+			String keyColumn = (String) args[1];
+			int initialMapSize = ((Integer) args[2]).intValue() ;
+			if(keyColumn!=null) {
+				Object[] newArgs = new Object[] { args[0],
+						new String[] { keyColumn },
+						new int[] { initialMapSize } };
+				return invoke(proxy, method_getNestedMapByQuery2, newArgs);
+			}
 		} else if (method_getNestedMapByQuery1.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			Object[] newArgs = new Object[] {
-					args[0],
-					new String[] { (String) args[1], (String) args[2] },
-					new int[] { ((Integer) args[3]).intValue(),
-							((Integer) args[4]).intValue() } };
-			return invoke(proxy, method_getNestedMapByQuery2, newArgs);
+			String outerKeyColumn = (String) args[1];
+			String innerKeyColumn = (String) args[2];
+			int initialOuterMapSize = ((Integer) args[3]).intValue();
+			int initialInnerMapSize = ((Integer) args[4]).intValue();
+			if(outerKeyColumn!=null && innerKeyColumn!=null) {
+				Object[] newArgs = new Object[] {
+						args[0],
+						new String[] { outerKeyColumn, innerKeyColumn },
+						new int[] { initialOuterMapSize, initialInnerMapSize} };
+				return invoke(proxy, method_getNestedMapByQuery2, newArgs);
+			}
 		} else if (method_getNestedMapByQuery2.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
-			if (log != null && log.isLoggable(Level.FINER)) {
-				log.finer(method.getName() + " " + Arrays.asList(args));
-			}
-			indention.increase();
 			QueryByCriteria query = (QueryByCriteria) args[0];
 			String[] columns = (String[]) args[1];
 			int[] mapSizes = (int[]) args[2];
-			return createNestedMap(proxy, query, columns, mapSizes, false);
+			if(query!=null && columns!=null && mapSizes!=null) {
+				return createNestedMap(proxy, query, columns, mapSizes, false);
+			}
 		} else if (method_clearCache.equals(method)) {
 			dash.clearAll();
 		} else if (method_rollbackTransaction1.equals(method)
@@ -341,31 +378,56 @@ class DashInvocationHandler implements InvocationHandler {
 		} else if ((method_deleteBean.equals(method) || method.getName()
 				.startsWith("saveBean")) && args[0] instanceof X2BaseBean) {
 			X2BaseBean bean = (X2BaseBean) args[0];
-			Class t = bean.getClass();
-			dash.modifyBeanRecord(t);
+			if(bean!=null) {
+				Class t = bean.getClass();
+				dash.modifyBeanRecord(t);
+			}
 		} else if (method_deleteBeanByOid.equals(method)) {
 			Class beanType = (Class) args[0];
-			dash.modifyBeanRecord(beanType);
+			String beanOid = (String) args[1];
+			if(beanType!=null && beanOid!=null) {
+				dash.modifyBeanRecord(beanType);
+			}
 		} else if (method_deleteByQuery.equals(method)
 				|| method_executeUpdateQuery.equals(method)
 				|| method_executeInsertQuery.equals(method)) {
 			Query query = (Query) args[0];
-			dash.modifyBeanRecord(query.getBaseClass());
-		}
-
-		if (log != null && log.isLoggable(Level.FINEST)
-				&& !method.getName().equals("getPersistenceKey")) {
-			if (args == null || args.length == 0) {
-				log.finest(method.getName());
-			} else {
-				log.finest(method.getName() + " " + Arrays.asList(args));
+			if(query!=null) {
+				dash.modifyBeanRecord(query.getBaseClass());
 			}
 		}
+		
 		Object returnValue = method.invoke(broker, args);
 		if (returnValue instanceof X2BaseBean) {
 			dash.storeBean((X2BaseBean) returnValue);
 		}
 		return returnValue;
+	}
+	
+	private boolean logMethod(Level level, Method method, Object[] args,String suffix) {
+		Logger log = dash.getLog();
+		
+		if(log==null || !log.isLoggable(level) || method.getName().equals("getPersistenceKey"))
+			return false;
+		
+		if(suffix!=null) {
+			log.log(level, method.getName()+" "+suffix);
+		} else if (args == null || args.length == 0) {
+			log.log(level, method.getName());
+		} else {
+			Object[] argsCopy = new Object[args.length];
+			for(int a = 0; a<args.length; a++) {
+				if(args[a]!=null && args[a].getClass().isArray()) {
+					argsCopy[a] = Arrays.asList( (Object[]) args[a] );
+				} else {
+					argsCopy[a] = args[a];
+				}
+			}
+			log.log(level, method.getName() + " " + Arrays.asList(argsCopy));
+		}
+		if(indentHandler!=null)
+			indentHandler.increase();
+		return true;
 	}
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })

@@ -305,11 +305,9 @@ public class ThreadedBrokerIterator<Input, Output> {
 				} else {
 					if (!inputQueue.offer(value)) {
 						// If all our other threads are busy: then we become a
-						// worker thread.
-						// We made sure the inputQueue was large enough that the
-						// other threads
-						// should have something to work on if they finish their
-						// task
+						// worker thread. We made sure the inputQueue was large 
+						// enough that the other threads should have something 
+						// to work on if they finish their task
 						runFunctionOnMasterThread(value);
 					}
 				}
