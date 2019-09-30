@@ -70,7 +70,7 @@ import com.x2dev.utils.ThreadUtils;
 public class Dash {
 
 	/**
-	 * This ThreadedBrokerIterator converts X2Brokers to DashBrokers (so the
+	 * This ThreadedBrokerIterator converts X2Brokers to DashBrokers (so they
 	 * include caching), and defers uncaught exceptions to
 	 * {@link Dash#getUncaughtExceptionHandler()}.
 	 */
@@ -103,60 +103,60 @@ public class Dash {
 	}
 
 	/**
-	 * This is an OperatorContext that connects Operators to X2BaseBeans.
+	 * This is an OperatorContext for X2BaseBeans. This is the bridge
+	 * that connects the Operator architecture with the X2BaseBean
+	 * architecture.
 	 */
 	public static final OperatorContext CONTEXT = new OperatorContext() {
 
-		@Override
-		public Object getValue(Object dataSource, String attributeName) {
+		abstract class Function {
+			public abstract Object evaluate(Object input);
+		}
 
-			abstract class Function {
-				public abstract Object evaluate(Object input);
-			}
+		class Parser {
+			LinkedList<Function> functions = new LinkedList<>();
+			String attributeName;
 
-			class Parser {
-				LinkedList<Function> functions = new LinkedList<>();
-				String attributeName;
+			public Parser(String input) {
+				while (true) {
+					if (input.startsWith("upper(") && input.endsWith(")")) {
+						functions.add(new Function() {
 
-				public Parser(String input) {
-					while (true) {
-						if (input.startsWith("upper(") && input.endsWith(")")) {
-							functions.add(new Function() {
+							@Override
+							public Object evaluate(Object input) {
+								if (input == null)
+									return null;
+								return ((String) input).toUpperCase();
+							}
 
-								@Override
-								public Object evaluate(Object input) {
-									if (input == null)
-										return null;
-									return ((String) input).toUpperCase();
-								}
+						});
+						input = input.substring("upper(".length(),
+								input.length() - 1);
+					} else if (input.startsWith("ISNUMERIC(")
+							&& input.endsWith(")")) {
+						functions.add(new Function() {
 
-							});
-							input = input.substring("upper(".length(),
-									input.length() - 1);
-						} else if (input.startsWith("ISNUMERIC(")
-								&& input.endsWith(")")) {
-							functions.add(new Function() {
+							@Override
+							public Object evaluate(Object input) {
+								if (input == null)
+									return null;
+								return StringUtils
+										.isNumeric((String) input);
+							}
 
-								@Override
-								public Object evaluate(Object input) {
-									if (input == null)
-										return null;
-									return StringUtils
-											.isNumeric((String) input);
-								}
-
-							});
-							input = input.substring("ISNUMERIC(".length(),
-									input.length() - 1);
-						} else {
-							attributeName = input;
-							return;
-						}
+						});
+						input = input.substring("ISNUMERIC(".length(),
+								input.length() - 1);
+					} else {
+						attributeName = input;
+						return;
 					}
 				}
-
 			}
+		}
 
+		@Override
+		public Object getValue(Object dataSource, String attributeName) {
 			Parser parser = new Parser(attributeName);
 
 			Object value;
@@ -181,11 +181,11 @@ public class Dash {
 	 * This combines an Operator and a bean Class. It is used as a key to
 	 * identify TemplateQueryProfiles.
 	 */
-	public static class ProfileKey extends
+	public static class TemplateQueryProfileKey extends
 			AbstractMap.SimpleEntry<Operator, Class<?>> {
 		private static final long serialVersionUID = 1L;
 
-		ProfileKey(Operator operator, Class<?> baseClass) {
+		TemplateQueryProfileKey(Operator operator, Class<?> baseClass) {
 			super(operator, baseClass);
 		}
 	}
@@ -225,7 +225,7 @@ public class Dash {
 
 	/**
 	 * Return a bean from the global cache, or return null if the bean does not
-	 * exist in the cache.
+	 * exist in the global cache.
 	 * 
 	 * @param persistenceKey
 	 *            the key identifying the database/client.
@@ -255,29 +255,18 @@ public class Dash {
 		return bean;
 	}
 
+	/**
+	 * Return the bean class associated with an oid.
+	 */
 	public static Class<?> getBeanTypeFromOid(String beanOid) {
+		Objects.requireNonNull(beanOid);
+		
 		String prefix = beanOid.substring(0, Math.min(3, beanOid.length()));
 		BeanTablePath btp = BeanTablePath.getTableByName(prefix.toUpperCase());
 		if (btp == null)
 			throw new IllegalArgumentException(
 					"Could not determine bean class for \"" + beanOid + "\".");
 		return btp.getBeanType();
-	}
-
-	/**
-	 * Return all the beans in a list of bean oids, or null if any of those
-	 * beans were not readily available in the global cache.
-	 */
-	public List<X2BaseBean> getBeans(PersistenceKey persistenceKey,
-			Class<?> beanType, List<String> beanOids) {
-		List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
-		for (String beanOid : beanOids) {
-			X2BaseBean bean = getBeanByOid(persistenceKey, beanType, beanOid);
-			if (bean == null)
-				return null;
-			beans.add(bean);
-		}
-		return beans;
 	}
 
 	/**
@@ -313,12 +302,6 @@ public class Dash {
 			 */
 			QUERY_HIT,
 			/**
-			 * This indicates the Dash caching layer identified the required
-			 * bean oids, and we replaced the original query with an oid-based
-			 * query.
-			 */
-			QUERY_REDUCED_TO_OIDS,
-			/**
 			 * This indicates we gave up on caching because we had too many
 			 * beans.
 			 */
@@ -346,11 +329,6 @@ public class Dash {
 			 */
 			QUERY_SKIP_UNSUPPORTED,
 			/**
-			 * This unusual case indicates that an oid was directly embedded in
-			 * the query (possibly with other query criteria)
-			 */
-			QUERY_HIT_FROM_OID,
-			/**
 			 * This indicates a bean was retrieved from a cache of weakly
 			 * reference beans. (This is only attempted when the global app's
 			 * cache fails.)
@@ -366,15 +344,17 @@ public class Dash {
 			 */
 			OID_MISS;
 		}
+		
+		private static final Comparator<Type> COMPARATOR =
+						new Comparator<Type>() {
+							@Override
+							public int compare(Type o1, Type o2) {
+								return o1.name().compareTo(o2.name());
+							}
+						};
 
 		// sort keys alphabetically so all CacheResults all follow same pattern
-		protected Map<Type, AtomicLong> matches = new TreeMap<>(
-				new Comparator<Type>() {
-					@Override
-					public int compare(Type o1, Type o2) {
-						return o1.name().compareTo(o2.name());
-					}
-				});
+		protected Map<Type, AtomicLong> matches = new TreeMap<>(COMPARATOR);
 
 		/**
 		 * Increment the counter for a given type of result.
@@ -583,12 +563,11 @@ public class Dash {
 					+ operator + ", profile=" + profile + ", orderBy="
 					+ orderBy + "]";
 		}
-
 	}
 
 	protected PersistenceKey persistenceKey;
 	protected CachePool cachePool;
-	protected Cache<ProfileKey, TemplateQueryProfile> profiles;
+	protected Cache<TemplateQueryProfileKey, TemplateQueryProfile> profiles;
 	protected CacheResults cacheResults = new CacheResults();
 	protected Map<Class<?>, Cache<CacheKey, List<String>>> cacheByBeanType = new HashMap<>();
 
@@ -657,10 +636,16 @@ public class Dash {
 		});
 	}
 
+	/**
+	 * Return true if the mechanism that caches WeakReferences of X2BaseBeans by their oids is active.
+	 */
 	public boolean isOidCachingActive() {
 		return isOidCachingActive;
 	}
 
+	/**
+	 * Return true if the mechanism that caches query results (as a list of oids) by their query is active.
+	 */
 	public boolean isQueryCachingActive() {
 		return isQueryCachingActive;
 	}
@@ -686,18 +671,16 @@ public class Dash {
 	 * First this consults Aspen's default cache. If that fails then this
 	 * consults Dash's local WeakReferenceBeanCache.
 	 * 
-	 * @param persistenceKey
 	 * @param beanClass
 	 * @param beanOid
 	 * @return
 	 */
-	public X2BaseBean getBeanByOid(PersistenceKey persistenceKey,
-			Class beanClass, String beanOid) {
-		if (isOidCachingActive() == false)
+	public X2BaseBean getBeanByOid(Class beanClass, String beanOid) {
+		if (isOidCachingActive() == false || beanOid==null)
 			return null;
 
 		Logger log = getLog();
-		X2BaseBean bean = getBeanFromGlobalCache(persistenceKey, beanClass,
+		X2BaseBean bean = getBeanFromGlobalCache(getPersistenceKey(), beanClass,
 				beanOid);
 		if (bean != null) {
 			if (log.isLoggable(Level.INFO))
@@ -716,6 +699,22 @@ public class Dash {
 			}
 		}
 		return bean;
+	}
+
+	/**
+	 * Return all the beans in a list of bean oids, or null if any of those
+	 * beans were not readily available in the global cache.
+	 */
+	public List<X2BaseBean> getBeansByOid(
+			Class<?> beanType, List<String> beanOids) {
+		List<X2BaseBean> beans = new ArrayList<>(beanOids.size());
+		for (String beanOid : beanOids) {
+			X2BaseBean bean = getBeanByOid(beanType, beanOid);
+			if (bean == null)
+				return null;
+			beans.add(bean);
+		}
+		return beans;
 	}
 
 	/**
@@ -765,6 +764,12 @@ public class Dash {
 			QueryByCriteria beanQuery) {
 		validatePersistenceKey(broker.getPersistenceKey());
 
+		if (!isQueryCachingActive()) {
+			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
+			QueryIteratorDash dashIter = new QueryIteratorDash(this, null, iter);
+			return dashIter;
+		}
+
 		Logger log = getLog();
 		if (!isBeanQuery(beanQuery)) {
 			if (log.isLoggable(Level.INFO))
@@ -773,12 +778,6 @@ public class Dash {
 			// isBeanQuery(..)==false
 			cacheResults.increment(CacheResults.Type.QUERY_SKIP_UNSUPPORTED);
 			return broker.getIteratorByQuery(beanQuery);
-		}
-
-		if (!isQueryCachingActive()) {
-			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
-			QueryIteratorDash dashIter = new QueryIteratorDash(this, null, iter);
-			return dashIter;
 		}
 
 		Operator operator;
@@ -793,8 +792,8 @@ public class Dash {
 		}
 
 		Operator template = operator.getTemplateOperator();
-		ProfileKey profileKey = new ProfileKey(template,
-				beanQuery.getBaseClass());
+		TemplateQueryProfileKey profileKey = new TemplateQueryProfileKey(
+				template, beanQuery.getBaseClass());
 
 		if (log.isLoggable(Level.INFO))
 			log.info("template: " + template);
@@ -884,8 +883,7 @@ public class Dash {
 		List<String> beanOids = cache.get(cacheKey);
 
 		if (beanOids != null) {
-			List<X2BaseBean> beans = getBeans(broker.getPersistenceKey(),
-					request.beanQuery.getBaseClass(), beanOids);
+			List<X2BaseBean> beans = getBeansByOid(request.beanQuery.getBaseClass(), beanOids);
 			if (beans != null) {
 				// This is our ideal case: we know the complete query results
 				QueryIterator dashIter = new QueryIteratorDash(this, beans);
@@ -896,73 +894,16 @@ public class Dash {
 			}
 
 			// We know the exact oids, but those beans aren't in Aspen's cache
-			// anymore. We can at least rewrite the query:
-
-			Criteria oidCriteria = new Criteria();
-			oidCriteria.addIn(X2BaseBean.COL_OID, beanOids);
-			QueryByCriteria newQuery = cloneBeanQuery(request.beanQuery,
-					oidCriteria);
-
-			QueryIterator iter = broker.getIteratorByQuery(newQuery);
-			QueryIterator dashIter = new QueryIteratorDash(this, null, iter);
-
-			if (log.isLoggable(Level.INFO))
-				log.info("found " + beanOids.size() + " bean oids for "
-						+ request);
-
-			return new AbstractMap.SimpleEntry<>(dashIter,
-					CacheResults.Type.QUERY_REDUCED_TO_OIDS);
+			// anymore. In a previous draft we tried rewriting the query based
+			// on the oids, but in our field test: this came up about 1 or 2
+			// times in two hours. I think the liabilities of doing something
+			// wrong outweigh further benefit here.
 		}
 
 		// we couldn't retrieve the entire query results from our cache
 
 		Operator canonicalOperator = request.operator.getCanonicalOperator();
 		Collection<Operator> splitOperators = canonicalOperator.split();
-
-		if (isSimpleAttributes(canonicalOperator.getAttributes())) {
-
-			Collection<X2BaseBean> beansFromOperator = getBeansFromSplitOperator(
-					broker.getPersistenceKey(),
-					request.beanQuery.getBaseClass(), splitOperators);
-			givenSpecificOids: if (beansFromOperator != null) {
-
-				// this is an odd case, but it came up in real-world tests:
-				// the query specifically gives us the oid, possibly with other
-				// conditions.
-				// such as:
-				// contains(oid, {"GRQ00000063MDb", "GRQ00000063M5p"}) &&
-				// programStudiesOid == "GPR0000001e0Cp"
-				// or:
-				// oid == "std01000055744" && studentEvents.eventType ==
-				// "GRADUATION REQUIREMENT"
-
-				// the former should be simple enough to convert using
-				// getBeanByOids and evaluate.
-				// the latter (because it relies on a related bean) is not safe
-				// to optimize here.
-
-				Collection<X2BaseBean> returnValue = new TreeSet<>(
-						request.orderBy);
-				for (X2BaseBean bean : beansFromOperator) {
-					try {
-						if (request.operator.evaluate(Dash.CONTEXT,
-								beansFromOperator))
-							returnValue.add(bean);
-					} catch (Exception e) {
-						getUncaughtExceptionHandler().uncaughtException(
-								Thread.currentThread(), e);
-						break givenSpecificOids;
-					}
-				}
-				QueryIterator dashIter = new QueryIteratorDash(this,
-						returnValue);
-				if (log.isLoggable(Level.INFO))
-					log.info("filtered " + returnValue.size()
-							+ " bean oids for " + request);
-				return new AbstractMap.SimpleEntry<>(dashIter,
-						CacheResults.Type.QUERY_HIT_FROM_OID);
-			}
-		}
 
 		if (splitOperators.size() <= 1 || !isCachingSplit(request)) {
 			// this is the simple scenario (no splitting)
@@ -1008,8 +949,7 @@ public class Dash {
 		// We're going to try splitting the operator.
 		// (That is: if the original operator was "A==true || B==true", then
 		// we may split this into "A" or "B" and look those up/cache those
-		// results
-		// separately.)
+		// results separately.)
 
 		Collection<X2BaseBean> knownBeans;
 		if (request.orderBy.getFieldHelpers().isEmpty()) {
@@ -1029,8 +969,7 @@ public class Dash {
 
 			List<String> splitOids = cache.get(splitKey);
 			if (splitOids != null) {
-				List<X2BaseBean> splitBeans = getBeans(
-						broker.getPersistenceKey(),
+				List<X2BaseBean> splitBeans = getBeansByOid(
 						request.beanQuery.getBaseClass(), splitOids);
 				if (splitBeans != null) {
 					// great: we got *some* of the beans by looking at a split
@@ -1055,8 +994,8 @@ public class Dash {
 		}
 
 		// we removed elements from splitIterators if we resolved those queries,
-		// so now
-		// all that remains is splitIterators is what we still need to look up.
+		// so now all that remains is splitIterators is what we still need to look 
+		// up.
 
 		QueryByCriteria ourQuery = request.beanQuery;
 		if (splitOperators.isEmpty()) {
@@ -1125,8 +1064,8 @@ public class Dash {
 		}
 		cache.put(cacheKey, beanOids);
 
-		scanOps: for (Operator op : splitOperators) {
-			if (isCachingSplitResults(request, knownBeans)) {
+		if (isCachingSplitResults(request, knownBeans)) {
+			scanOps : for (Operator op : splitOperators) {
 				List<String> oids = new LinkedList<>();
 
 				for (X2BaseBean bean : knownBeans) {
@@ -1167,50 +1106,6 @@ public class Dash {
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_MISS);
 		}
-	}
-
-	protected Collection<X2BaseBean> getBeansFromSplitOperator(
-			PersistenceKey persistenceKey, Class beanClass,
-			Collection<Operator> splitOperators) {
-		Collection<X2BaseBean> beans = new HashSet<>();
-		Logger log = getLog();
-		int ctr = 0;
-		for (Operator op : splitOperators) {
-
-			List ops;
-			if (op instanceof And) {
-				ops = ((And) op).getOperands();
-			} else {
-				ops = new ArrayList<>();
-				ops.add(op);
-			}
-
-			EqualTo oidEqualTo = null;
-			for (Object z : ops) {
-				if (z instanceof EqualTo
-						&& X2BaseBean.COL_OID.equals(((EqualTo) z)
-								.getAttribute())) {
-					oidEqualTo = (EqualTo) z;
-					break;
-				}
-			}
-			X2BaseBean bean = oidEqualTo == null ? null : getBeanByOid(
-					persistenceKey, beanClass, oidEqualTo.getAttribute());
-
-			if (bean == null) {
-				if (log.isLoggable(Level.INFO))
-					log.info("aborting after " + ctr + " beans");
-				return null;
-			}
-
-			beans.add(bean);
-			ctr++;
-		}
-
-		if (log.isLoggable(Level.INFO))
-			log.info("returning " + beans.size() + " beans");
-
-		return beans;
 	}
 
 	/**
@@ -1343,19 +1238,22 @@ public class Dash {
 			log.info(beanType.getName());
 	}
 
-	public int clearCache(Class beanType) {
-		Objects.requireNonNull(beanType);
-		int size = -1;
+	/**
+	 * Clear all cached information related to a given bean type.
+	 */
+	public void clearCache(Class beanType) {
+		if(beanType==null)
+			return;
+		
+		int size = 0;
 		try {
 			Cache<CacheKey, List<String>> cache = getCache(beanType, false);
 			if (cache != null) {
 				size = cache.size();
 				cache.clear();
-				return size;
 			}
 
-			weakReferenceCache.clear(beanType);
-			return 0;
+			size += weakReferenceCache.clear(beanType);
 		} finally {
 			Logger log = getLog();
 			if (log.isLoggable(Level.INFO)) {

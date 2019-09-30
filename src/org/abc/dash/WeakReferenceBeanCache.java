@@ -149,16 +149,20 @@ public class WeakReferenceBeanCache {
 
 	/**
 	 * Clear all data related to a specific bean type from this cache.
+	 * 
+	 * @return the number of elements removed
 	 */
-	public void clear(Class<?> beanType) {
+	public int clear(Class<?> beanType) {
 		if(beanType==null)
-			return;
+			return 0;
 		
 		synchronized (this) {
 			WeakValueMap<String, X2BaseBean> classCache = cache.remove(beanType);
 			if (classCache == null)
-				return;
+				return 0;
+			int size = classCache.size();
 			classCache.clear();
+			return size;
 		}
 	}
 }
