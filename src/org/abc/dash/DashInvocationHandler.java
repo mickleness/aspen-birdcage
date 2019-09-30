@@ -1,6 +1,7 @@
 package org.abc.dash;
 
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.lang.reflect.Array;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -278,7 +279,7 @@ class DashInvocationHandler implements InvocationHandler {
 			Class beanType = (Class) args[0];
 			String beanOid = (String) args[1];
 			if(beanType!=null && beanOid!=null) {
-				X2BaseBean bean = dash.getBeanByOid(broker.getPersistenceKey(),
+				X2BaseBean bean = dash.getBeanByOid(
 						beanType, beanOid);
 				if (bean != null)
 					return bean;
@@ -324,7 +325,7 @@ class DashInvocationHandler implements InvocationHandler {
 		} else if (method_getGroupedCollectionByQuery1.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
 			String groupColumn = (String) args[1];
-			int initialMapSize = ((Integer) args[0]).intValue();
+			int initialMapSize = ((Integer) args[2]).intValue();
 			if(groupColumn!=null) {
 				Object[] newArgs = new Object[] { args[0],
 						new String[] { groupColumn },
@@ -418,7 +419,13 @@ class DashInvocationHandler implements InvocationHandler {
 			Object[] argsCopy = new Object[args.length];
 			for(int a = 0; a<args.length; a++) {
 				if(args[a]!=null && args[a].getClass().isArray()) {
-					argsCopy[a] = Arrays.asList( (Object[]) args[a] );
+					List<Object> list = new LinkedList<>();
+					int size = Array.getLength(args[a]);
+					for(int i = 0; i<size; i++) {
+						Object element = Array.get(args[a], i);
+						list.add(element);
+					}
+					argsCopy[a] = list;
 				} else {
 					argsCopy[a] = args[a];
 				}
