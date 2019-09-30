@@ -48,8 +48,6 @@ import com.follett.fsc.core.k12.business.ModelProperty;
 import com.follett.fsc.core.k12.business.PrivilegeSet;
 import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.web.AppGlobals;
-import com.pump.data.operator.And;
-import com.pump.data.operator.EqualTo;
 import com.pump.data.operator.Operator;
 import com.pump.data.operator.OperatorContext;
 import com.pump.util.Cache;
@@ -61,12 +59,35 @@ import com.x2dev.utils.ThreadUtils;
  * The Dash object maintains a cache and a set of shared methods/tools that one
  * or more BrokerDashes can use.
  * <p>
+ * In addition to using this class: you'll see additional performance benefits
+ * if you multithread your tool using a {@link DashThreadedBrokerIterator}.
+ * <p>
  * This class is thread-safe. So you can set up one Dash object and use it
  * across multiple threads. For example: if you set up n-many threads and each
  * thread has a unique X2Broker, then the same Dash object can convert that
  * broker into a caching BrokerDash.
+ * <h3>Caching Summary</h3>
+ * The Dash caching model relies on two separate caches:
+ * <ul><li>A cache of Strings to weak references of beans. The assumption
+ * behind this cache is: during the lifetime of a tool you may be keeping
+ * strong references to beans around for a long time. Aspen's global cache
+ * may drop those beans, but if we've kept a weak reference to them: we
+ * can still pull them up (until the weak reference enqueued).</li>
+ * <li>A cache of bean queries to their sorted oid results. This is
+ * essentially a map where the key is a QueryByCriteria, and the value
+ * is a list of oids. (Except it's actually much more complicated than that:
+ * there are several conditions under which we'll avoid caching a query,
+ * and the queries have to be converted to Operator objects because
+ * Query objects do not reliably implementing hashCode/equals.) The
+ * assumption behind this cache is: you may reissue the same (or similar)
+ * queries several times in a loop inside a tool. This implementation
+ * also breaks up ("splits") a query into its OR'ed members and can
+ * analyze those members separately. This cache is configured so after
+ * X-many elements are added or Y-many milliseconds elapse the oldest 
+ * elements are purged from the cache, so it will not grow 
+ * indefinitely.</li></ul> 
  */
-@Tool(name = "Dash Caching Model", id = "DASH-CACHE", type = "Procedure")
+@Tool(name = "Dash (Caching Layer)", id = "DASH-CACHE", type = "Procedure")
 public class Dash {
 
 	/**
@@ -1378,35 +1399,20 @@ public class Dash {
 	 * Create a BrokerDash that uses this factory's CachePool.
 	 * <p>
 	 * It is safe to call this method redundantly. If the argument already uses
-	 * this factory's ThreadPool then the argument is returned as-is.
+	 * this object's cache then the argument broker is returned as-is.
+	 * <p>
 	 */
 	public BrokerDash convertToBrokerDash(X2Broker broker) {
-		return convertToBrokerDash(broker, true);
-	}
-
-	/**
-	 * Create a BrokerDash that uses this factory's CachePool.
-	 * <p>
-	 * It is safe to call this method redundantly. If the argument already uses
-	 * this factory's ThreadPool then the argument is returned as-is.
-	 * <p>
-	 * 
-	 * @param active
-	 *            this toggles the dash caching logic on/off.
-	 */
-	public BrokerDash convertToBrokerDash(X2Broker broker, boolean active) {
 		validatePersistenceKey(broker.getPersistenceKey());
 
 		if (broker instanceof BrokerDash) {
 			BrokerDash bd = (BrokerDash) broker;
 			Dash sharedResource = bd.getDash();
 			if (sharedResource == this) {
-				bd.setDashActive(active);
 				return bd;
 			}
 		}
 		BrokerDash returnValue = createBrokerDash(broker);
-		returnValue.setDashActive(active);
 		return returnValue;
 	}
 
