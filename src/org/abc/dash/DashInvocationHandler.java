@@ -168,11 +168,35 @@ class DashInvocationHandler implements InvocationHandler {
 	}
 	
 	private IndentionHandler indentHandler;
+	long lastPurge = -1;
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args)
 			throws Throwable {
 		ThreadUtils.checkInterrupt();
+		
+		// The following purges (some) cached info every 30 seconds.
+		// This is NOT essential for the caches to drop elements.
+		// Every time either object (weakReferenceCache or cachePool)
+		// is used: it will also look to see if it can purge expired
+		// or unusable data.
+		
+		// ... but where this might come handy is this scenario:
+		// If you've used weakReferenceCache and created a cache
+		// relating to SisStudents, and then you proceed to not
+		// call that particular cache (related to SisStudents) for
+		// a long time: we may benefit from explicitly purging that
+		// cache. If we do not: in a worst-case scenario that cache
+		// may keep a large number of Strings and unusable WeakReferences
+		// in memory.
+		
+		long currentTime = System.currentTimeMillis();
+		long elapsed = currentTime - lastPurge;
+		if(elapsed>30000) {
+			dash.weakReferenceCache.purge();
+			dash.cachePool.purge();
+			lastPurge = currentTime;
+		}
 
 		Logger log = dash.getLog();
 		boolean indentHandlerCreated;

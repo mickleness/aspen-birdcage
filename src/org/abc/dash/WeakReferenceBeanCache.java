@@ -4,8 +4,10 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 
 import com.follett.fsc.core.k12.beans.X2BaseBean;
@@ -163,6 +165,25 @@ public class WeakReferenceBeanCache {
 			int size = classCache.size();
 			classCache.clear();
 			return size;
+		}
+	}
+
+	/**
+	 * Purge unreachable WeakReferences from this cache.
+	 * <p>
+	 * You don't have to explicitly call this method, but doing so
+	 * might help inactive caches purge references. Each cache
+	 * automatically checks for stale references when it is used, though.
+	 */
+	public void purge() {
+		synchronized (this) {
+			Iterator<Entry<Class<?>, WeakValueMap<String, X2BaseBean>>> iter = cache.entrySet().iterator();
+			while(iter.hasNext()) {
+				Entry<Class<?>, WeakValueMap<String, X2BaseBean>> entry = iter.next();
+				entry.getValue().purge();
+				if(entry.getValue().size()==0)
+					iter.remove();
+			}
 		}
 	}
 }
