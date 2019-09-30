@@ -168,7 +168,7 @@ class DashInvocationHandler implements InvocationHandler {
 	}
 	
 	private IndentionHandler indentHandler;
-	long lastPurge = -1;
+	long lastPurge = System.currentTimeMillis();
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args)
