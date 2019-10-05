@@ -144,6 +144,10 @@ class DashInvocationHandler implements InvocationHandler {
 		public void increase() {
 			spaces += 2;
 		}
+		
+		public void decrease() {
+			spaces = Math.max(0, spaces-2);
+		}
 
 	}
 
@@ -168,7 +172,7 @@ class DashInvocationHandler implements InvocationHandler {
 	}
 	
 	private IndentionHandler indentHandler;
-	long lastPurge = System.currentTimeMillis();
+	long lastPurge = -1;
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args)
@@ -222,7 +226,13 @@ class DashInvocationHandler implements InvocationHandler {
 			// if possible: intercept methods using our caching model/layer
 			if (active) {
 				try {
-					return invokeCached(proxy, method, args);
+					long t = System.currentTimeMillis();
+					Object returnValue = invokeCached(proxy, method, args);
+					t = System.currentTimeMillis() - t;
+					if ((t > 10 || returnValue!=null) && log != null) {
+						logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
+					}
+					return returnValue;
 				} catch(CancellationException e) {
 					throw e;
 				} catch (Exception e) {
@@ -248,8 +258,8 @@ class DashInvocationHandler implements InvocationHandler {
 			Object returnValue = method.invoke(broker, args);
 			t = System.currentTimeMillis() - t;
 			
-			if (t > 10 && log != null) {
-				logMethod(Level.FINEST, method, args, "(ended)");
+			if ((t > 10 || returnValue!=null) && log != null) {
+				logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
 			}
 
 			return returnValue;
@@ -257,6 +267,9 @@ class DashInvocationHandler implements InvocationHandler {
 			if(indentHandlerCreated) {
 				log.removeHandler(indentHandler);
 				indentHandler = null;
+			}
+			if(indentHandler!=null) {
+				indentHandler.decrease();
 			}
 		}
 	}

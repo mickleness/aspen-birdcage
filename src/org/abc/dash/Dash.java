@@ -909,16 +909,19 @@ public class Dash {
 				// This is our ideal case: we know the complete query results
 				QueryIterator dashIter = new QueryIteratorDash(this, beans);
 				if (log.isLoggable(Level.INFO))
-					log.info("found " + beans.size() + " beans for " + request);
+					log.info("found " + beans.size() + " beans for " + request+": "+beanOids);
 				return new AbstractMap.SimpleEntry<>(dashIter,
 						CacheResults.Type.QUERY_HIT);
+			} else {
+				if (log.isLoggable(Level.INFO))
+					log.info("found " + beanOids.size() + " beans for " + request+", but they couldn't be uncached: "+beanOids);
 			}
 
-			// We know the exact oids, but those beans aren't in Aspen's cache
+			// We know the exact oids, but we couldn't retrieve those beans
 			// anymore. In a previous draft we tried rewriting the query based
 			// on the oids, but in our field test: this came up about 1 or 2
-			// times in two hours. I think the liabilities of doing something
-			// wrong outweigh further benefit here.
+			// times in two hours. I think it's too much of a risk (we might get
+			// something wrong) to worry about this scenario too much
 		}
 
 		// we couldn't retrieve the entire query results from our cache
@@ -962,7 +965,7 @@ public class Dash {
 
 			QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn);
 			if (log.isLoggable(Level.INFO))
-				log.info("queried " + ctr + " iterations for " + request);
+				log.info("queried " + ctr + " iterations for " + request+": "+beanOids);
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_MISS);
 		}
@@ -998,7 +1001,7 @@ public class Dash {
 					removedOperators++;
 					if (log.isLoggable(Level.INFO))
 						log.info("resolved split operator " + splitBeans.size()
-								+ " beans: " + splitOperator);
+								+ " beans for \"" + splitOperator+"\": "+splitOids);
 					knownBeans.addAll(splitBeans);
 					splitOpIter.remove();
 				} else {
@@ -1008,8 +1011,8 @@ public class Dash {
 					cache.remove(splitKey);
 					if (log.isLoggable(Level.INFO))
 						log.info("identified split operator with "
-								+ splitOids.size() + " beans, but purged it: "
-								+ splitOperator);
+								+ splitOids.size() + " beans, but they couldn't be uncached \""
+								+ splitOperator+"\": "+splitOids);
 				}
 			}
 		}
@@ -1109,7 +1112,7 @@ public class Dash {
 				cache.put(splitKey, oids);
 				if (log.isLoggable(Level.INFO))
 					log.info("identified " + oids.size()
-							+ " oids for split query " + op);
+							+ " oids for split query \"" + op+"\": "+oids);
 			}
 		}
 
@@ -1118,12 +1121,12 @@ public class Dash {
 			if (log.isLoggable(Level.INFO))
 				log.info("queried " + ctr + " iterations (with "
 						+ removedOperators + " cached split queries) for "
-						+ request);
+						+ request+": "+beanOids);
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_REDUCED_FROM_SPLIT);
 		} else {
 			if (log.isLoggable(Level.INFO))
-				log.info("queried " + ctr + " iterations for " + request);
+				log.info("queried " + ctr + " iterations for " + request+": "+beanOids);
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_MISS);
 		}
