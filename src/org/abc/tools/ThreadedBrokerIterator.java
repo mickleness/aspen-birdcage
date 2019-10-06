@@ -23,7 +23,6 @@ import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.web.AppGlobals;
 import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.ThreadUtils;
-import com.x2dev.utils.X2RuntimeException;
 
 /**
  * This walks through all the elements in an Iterator and passes them to
