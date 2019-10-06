@@ -23,6 +23,7 @@ import com.follett.fsc.core.k12.business.X2Broker;
 import com.follett.fsc.core.k12.web.AppGlobals;
 import com.x2dev.utils.LoggerUtils;
 import com.x2dev.utils.ThreadUtils;
+import com.x2dev.utils.X2RuntimeException;
 
 /**
  * This walks through all the elements in an Iterator and passes them to
@@ -139,9 +140,8 @@ public class ThreadedBrokerIterator<Input, Output> {
 				// I originally tried calls like inputQueue.poll(50,
 				// TimeUnit.MILLIS), but for some reason
 				// when I used those calls and killed the master tool: this
-				// helper thread seemed to get
-				// locked and never recover. I didn't figure out exactly why,
-				// but switching to this
+				// helper thread seemed to get locked and never recover. I 
+				// didn't figure out exactly why, but switching to this
 				// poll() method appeared to resolve it:
 				Input input = inputQueue.poll();
 
@@ -157,12 +157,11 @@ public class ThreadedBrokerIterator<Input, Output> {
 					} else {
 						if (inputQueueStoppedAcceptingAdditions) {
 							// First we noticed completedIterator is true, then
-							// we
-							// drained the inputQueue. We can end this thread
+							// we drained the inputQueue. We can end this thread
 							// now.
 							return;
 						}
-
+						
 						long elapsed = System.currentTimeMillis() - lastInput;
 						if (isPollTimeout(elapsed)) {
 							keepRunning = false;
@@ -284,12 +283,58 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 *            it is automatically closed on completion.
 	 */
 	public synchronized void run(Iterator iter) {
-		// this method is synchronized, so we'll only edit completedIterator on
-		// one thread
-		completedIterator.set(false);
+		try {
+			// this method is synchronized, so we'll only edit completedIterator on
+			// one thread
+			completedIterator.set(false);
 
-		try (AutoCloseable z = getAutoCloseable(iter)) {
-			while (iter.hasNext()) {
+			try (AutoCloseable z = getAutoCloseable(iter)) {
+				while (iter.hasNext()) {
+					ThreadUtils.checkInterrupt();
+
+					synchronized (exceptions) {
+						if (!exceptions.isEmpty()) {
+							throw new ThreadedException(exceptions);
+						}
+					}
+
+					Input value = (Input) iter.next();
+
+					if (inputQueue == null) {
+						runFunctionOnMasterThread(value);
+					} else {
+						if (!inputQueue.offer(value)) {
+							// If all our other threads are busy: then we become a
+							// worker thread. We made sure the inputQueue was large 
+							// enough that the other threads should have something 
+							// to work on if they finish their task
+							runFunctionOnMasterThread(value);
+						}
+					}
+
+					flushOutputs();
+				}
+			} catch (CancellationException e) {
+				inputQueue.clear();
+				throw e;
+			} catch (ThreadedException e) {
+				inputQueue.clear();
+				throw e;
+			} catch (Exception e) {
+				// this would be an extremely rare case
+				if (handleUncaughtException(e)) {
+					synchronized (exceptions) {
+						exceptions.put(e, null);
+					}
+					throw new ThreadedException(exceptions);
+				}
+			} finally {
+				completedIterator.set(true);
+			}
+
+			// we stopped adding things to our queue, but we need to make sure our
+			// helper threads addressed them all:
+			while (getActiveHelperThreadCount() > 0) {
 				ThreadUtils.checkInterrupt();
 
 				synchronized (exceptions) {
@@ -298,69 +343,73 @@ public class ThreadedBrokerIterator<Input, Output> {
 					}
 				}
 
-				Input value = (Input) iter.next();
-
-				if (inputQueue == null) {
-					runFunctionOnMasterThread(value);
+				Input input = inputQueue.poll();
+				if (input != null) {
+					runFunctionOnMasterThread(input);
 				} else {
-					if (!inputQueue.offer(value)) {
-						// If all our other threads are busy: then we become a
-						// worker thread. We made sure the inputQueue was large 
-						// enough that the other threads should have something 
-						// to work on if they finish their task
-						runFunctionOnMasterThread(value);
+					// out queue is empty, but helper threads are still wrapping up.
+					// So we wait:
+					try {
+						Thread.sleep(10);
+					} catch (InterruptedException e) {
 					}
 				}
-
-				flushOutputs();
 			}
-		} catch (CancellationException e) {
-			inputQueue.clear();
-			throw e;
-		} catch (ThreadedException e) {
-			inputQueue.clear();
-			throw e;
-		} catch (Exception e) {
-			// this would be an extremely rare case
-			if (handleUncaughtException(e)) {
-				synchronized (exceptions) {
-					exceptions.put(e, null);
-				}
-				throw new ThreadedException(exceptions);
-			}
-		} finally {
-			completedIterator.set(true);
-		}
 
-		// we stopped adding things to our queue, but we need to make sure our
-		// helper threads addressed them all:
-		while (getActiveHelperThreadCount() > 0) {
-			ThreadUtils.checkInterrupt();
+			flushOutputs();
 
 			synchronized (exceptions) {
 				if (!exceptions.isEmpty()) {
 					throw new ThreadedException(exceptions);
 				}
 			}
+		} finally {
+			// We should be all done by the time we reach here.
+			
+			// Once (in over 100 trials) I saw a helper thread on the app server
+			// long after the master thread was canceled just sitting there with
+			// this stack trace:
+			// Current stack trace for tool-job-1369309-helper-6
+			// com.microsoft.sqlserver.jdbc.TDSCommand.close(IOBuffer.java:5781)
+			// com.microsoft.sqlserver.jdbc.SQLServerStatement.discardLastExecutionResults(SQLServerStatement.java:94)
+			// com.microsoft.sqlserver.jdbc.SQLServerStatement.closeInternal(SQLServerStatement.java:584)
+			// com.microsoft.sqlserver.jdbc.SQLServerStatement.close(SQLServerStatement.java:596)
+			// com.follett.fsc.core.framework.persistence.ConnectionFactoryX2Impl$ConPoolFactory.validateConnection(ConnectionFactoryX2Impl.java:740)
+			// com.follett.fsc.core.framework.persistence.ConnectionFactoryX2Impl$ConPoolFactory.validateObject(ConnectionFactoryX2Impl.java:689)
+			// org.apache.commons.pool.impl.GenericObjectPool.borrowObject(GenericObjectPool.java:788)
+			// com.follett.fsc.core.framework.persistence.ConnectionFactoryX2Impl.getConnectionFromPool(ConnectionFactoryX2Impl.java:368)
+			// org.apache.ojb.broker.accesslayer.ConnectionFactoryAbstractImpl.lookupConnection(ConnectionFactoryAbstractImpl.java:116)
+			// org.apache.ojb.broker.accesslayer.ConnectionManagerImpl.getConnection(ConnectionManagerImpl.java:105)
+			// org.apache.ojb.broker.accesslayer.ConnectionManagerImpl.localBegin(ConnectionManagerImpl.java:147)
+			// org.apache.ojb.broker.core.PersistenceBrokerImpl.beginTransaction(PersistenceBrokerImpl.java:402)
+			// org.apache.ojb.broker.core.DelegatingPersistenceBroker.beginTransaction(DelegatingPersistenceBroker.java:139)
+			// org.apache.ojb.broker.core.DelegatingPersistenceBroker.beginTransaction(DelegatingPersistenceBroker.java:139)
+			// com.follett.fsc.core.k12.beans.BeanManager.beginTransaction(BeanManager.java:1276)
 
-			Input input = inputQueue.poll();
-			if (input != null) {
-				runFunctionOnMasterThread(input);
-			} else {
-				// out queue is empty, but helper threads are still wrapping up.
-				// So we wait:
-				try {
-					Thread.sleep(10);
-				} catch (InterruptedException e) {
+			// So knowing that broker threads can randomly hang, let's force all
+			// our threads to either finish or die. (This is analogous to what
+			// the ToolJob does to the master thread.)
+			
+			boolean wait = false;
+			for (Thread thread : threads) {
+				if(thread.isAlive()) {
+					thread.interrupt();
+					wait = true;
 				}
 			}
-		}
+			
+			if(wait) {
+				try {
+					Thread.sleep(500);
+				} catch(InterruptedException e) {
+					//intentionally empty
+				}
+			}
 
-		flushOutputs();
-
-		synchronized (exceptions) {
-			if (!exceptions.isEmpty()) {
-				throw new ThreadedException(exceptions);
+			for (Thread thread : threads) {
+				if(thread.isAlive()) {
+					thread.stop();
+				}
 			}
 		}
 	}
