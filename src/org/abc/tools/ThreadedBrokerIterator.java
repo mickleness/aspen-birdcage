@@ -112,10 +112,12 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 */
 	class HelperThread extends Thread {
 		Thread masterThread;
+		AtomicBoolean completedIterator;
 
-		public HelperThread(int index) {
+		HelperThread(int index,AtomicBoolean completedIterator) {
 			super(Thread.currentThread().getName() + "-helper-" + index);
 			masterThread = Thread.currentThread();
+			this.completedIterator = completedIterator;
 		}
 
 		@Override
@@ -196,8 +198,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 	protected Consumer<Output> outputListener;
 	private ArrayBlockingQueue<Input> inputQueue;
 	protected List<Output> outputQueue = new LinkedList<>();
-	private AtomicBoolean completedIterator = new AtomicBoolean(false);
-	private Thread[] threads;
+	int threadCount;
 
 	/**
 	 * Create a new ThreadedIteratorHelper.
@@ -235,6 +236,8 @@ public class ThreadedBrokerIterator<Input, Output> {
 					+ ") must be at least one");
 		this.privilegeSet = privilegeSet;
 		this.function = function;
+		this.threadCount = threadCount;
+		this.outputListener = outputListener;
 
 		// Our master thread (that puts things on the queue) will automatically
 		// switch to become a worker thread if the queue reaches its capacity.
@@ -248,14 +251,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 		// weight. If the master thread picks up a task that's 10x more work
 		// than most other tasks: this model still falls apart.
 
-		inputQueue = threadCount > 0 ? new ArrayBlockingQueue<Input>(
-				queueCapacity) : null;
-		threads = new Thread[threadCount - 1];
-		for (int a = 0; a < threads.length; a++) {
-			threads[a] = new HelperThread(a);
-			threads[a].start();
-		}
-		this.outputListener = outputListener;
+		inputQueue = new ArrayBlockingQueue<Input>(queueCapacity);
 	}
 
 	/**
@@ -281,7 +277,16 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 *            the iterator to walk through. If this is an AutoCloseable then
 	 *            it is automatically closed on completion.
 	 */
-	public synchronized void run(Iterator iter) {
+	public void run(Iterator iter) {
+		final AtomicBoolean completedIterator = new AtomicBoolean(false);
+		
+		//this thread may also be a worker thread, so use "threadCount - 1"
+		Thread[] threads = new Thread[threadCount - 1];
+		for (int a = 0; a < threads.length; a++) {
+			threads[a] = new HelperThread(a, completedIterator);
+			threads[a].start();
+		}
+		
 		try {
 			// this method is synchronized, so we'll only edit completedIterator on
 			// one thread
@@ -299,16 +304,12 @@ public class ThreadedBrokerIterator<Input, Output> {
 
 					Input value = (Input) iter.next();
 
-					if (inputQueue == null) {
+					if (!inputQueue.offer(value)) {
+						// If all our other threads are busy: then we become a
+						// worker thread. We made sure the inputQueue was large 
+						// enough that the other threads should have something 
+						// to work on if they finish their task
 						runFunctionOnMasterThread(value);
-					} else {
-						if (!inputQueue.offer(value)) {
-							// If all our other threads are busy: then we become a
-							// worker thread. We made sure the inputQueue was large 
-							// enough that the other threads should have something 
-							// to work on if they finish their task
-							runFunctionOnMasterThread(value);
-						}
 					}
 
 					flushOutputs();
@@ -333,7 +334,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 
 			// we stopped adding things to our queue, but we need to make sure our
 			// helper threads addressed them all:
-			while (getActiveHelperThreadCount() > 0) {
+			while (getActiveHelperThreadCount(threads) > 0) {
 				ThreadUtils.checkInterrupt();
 
 				synchronized (exceptions) {
@@ -509,7 +510,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 	 * This is used during shutdown/cleanup to wait for all the consumer threads
 	 * to exit.
 	 */
-	protected int getActiveHelperThreadCount() {
+	protected int getActiveHelperThreadCount(Thread[] threads) {
 		int ctr = 0;
 		for (Thread thread : threads) {
 			if (thread.isAlive())
