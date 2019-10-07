@@ -390,25 +390,25 @@ public class ThreadedBrokerIterator<Input, Output> {
 			// our threads to either finish or die. (This is analogous to what
 			// the ToolJob does to the master thread.)
 			
-			boolean wait = false;
-			for (Thread thread : threads) {
-				if(thread.isAlive()) {
-					thread.interrupt();
-					wait = true;
+			try {
+				boolean wait = false;
+				for (Thread thread : threads) {
+					if(thread.isAlive()) {
+						thread.interrupt();
+						wait = true;
+					}
 				}
-			}
-			
-			if(wait) {
-				try {
+				
+				if(wait) {
 					Thread.sleep(500);
-				} catch(InterruptedException e) {
-					//intentionally empty
 				}
-			}
-
-			for (Thread thread : threads) {
-				if(thread.isAlive()) {
-					thread.stop();
+			} catch(InterruptedException e) {
+				//intentionally empty
+			} finally {
+				for (Thread thread : threads) {
+					if(thread.isAlive()) {
+						thread.stop();
+					}
 				}
 			}
 		}
