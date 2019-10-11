@@ -86,7 +86,24 @@ import com.x2dev.utils.ThreadUtils;
  * analyze those members separately. This cache is configured so after
  * X-many elements are added or Y-many milliseconds elapse the oldest 
  * elements are purged from the cache, so it will not grow 
- * indefinitely.</li></ul> 
+ * indefinitely.</li></ul>
+ * <p>
+ * <h3>Query Consolidation</h3>
+ * This also offers the option to consolidate multiple queries being issued
+ * from different threads.
+ * <p>
+ * Not all queries currently support consolidation. (For example: column queries,
+ * or queries with subqueries are not supported.)
+ * <p>
+ * For example: if one thread queries for "std==1" and another thread queries for "std==2",
+ * then if we only allow one active query at a time: one of these threads will query
+ * for "std==1 || std==2".
+ * <p>
+ * This feature only makes sense if you want to use multiple threads. If any thread
+ * wants to issue a query and no other thread is blocking it: it will immediately
+ * issue its query. (So in a single-thread environment: no competing thread will ever
+ * block queries. So for single threads this adds a slight overhead that doesn't
+ * offer any benefits.)
  */
 @Tool(name = "Dash (Caching Layer)", id = "DASH-CACHE", type = "Procedure")
 public class Dash {
@@ -627,10 +644,15 @@ public class Dash {
 	 * @param maxCacheDuration
 	 *            the maximum duration (in milliseconds) any entry can exist in
 	 *            the cache.
+	 * @param activeQueryLimit
+	 *            the number of threads that can simultaneously issue queries.
+	 *            <p>
+	 *            If this is not a positive number then this feature is unused.
+	 *            See "Query Consolidation" in class javadoc for details.
 	 */
 	public Dash(PersistenceKey persistenceKey, int maxCacheSize,
-			long maxCacheDuration, int pooledQuerySize) {
-		this(persistenceKey, new CachePool(maxCacheSize, maxCacheDuration, -1), pooledQuerySize);
+			long maxCacheDuration, int activeQueryLimit) {
+		this(persistenceKey, new CachePool(maxCacheSize, maxCacheDuration, -1), activeQueryLimit);
 	}
 
 	/**
@@ -638,11 +660,17 @@ public class Dash {
 	 * 
 	 * @param cachePool
 	 *            the CachePool used to maintain all cached data.
+	 * @param activeQueryLimit
+	 *            the number of threads that can simultaneously issue queries.
+	 *            <p>
+	 *            If this is not a positive number then this feature is unused.
+	 *            See "Query Consolidation" in class javadoc for details.
+	 *            
 	 */
-	public Dash(PersistenceKey persistenceKey, CachePool cachePool, int pooledQuerySize) {
+	public Dash(PersistenceKey persistenceKey, CachePool cachePool, int activeQueryLimit) {
 		Objects.requireNonNull(cachePool);
 		Objects.requireNonNull(persistenceKey);
-		querySemaphore = new Semaphore(pooledQuerySize);
+		querySemaphore = activeQueryLimit>=1 ? new Semaphore(activeQueryLimit) : null;
 		this.cachePool = cachePool;
 		this.persistenceKey = persistenceKey;
 		profiles = new Cache<>(cachePool);
@@ -1172,9 +1200,9 @@ public class Dash {
 		return sb.toString();
 	}
 	
-	static class PooledQueryRequest {
+	private static class PooledQueryRequest {
 		Operator operator;
-		Collection<X2BaseBean> results = new LinkedList<>();
+		Collection<X2BaseBean> results;
 		Semaphore lock = new Semaphore(1);
 		
 		PooledQueryRequest(Operator operator) {
@@ -1193,25 +1221,28 @@ public class Dash {
 	
 	Logger poolLogger;
 	Map<Class, Map<CacheKey, Collection<PooledQueryRequest>>> pendingQueries = new HashMap<>();
+	
+	/**
+	 * Queries are issued inside this semaphore (as much as possible).
+	 */
 	Semaphore querySemaphore;
 
 	protected QueryIterator createPooledQueryIterator(X2Broker broker,QueryByCriteria beanQuery,Operator op,TemplateQueryProfile profile, OrderByComparator comparator) {
 		Logger log = poolLogger;
 		boolean abort = false;
-		if(profile.ctr<200) {
+		if(querySemaphore==null) {
+			abort = true;
+		} else if(profile.ctr<100) {
 			if(log!=null && log.isLoggable(Level.FINEST)) {
-				log.finest("aborting because profile used fewer than 200 times: "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+op);
+				log.finest("aborting because profile used fewer than 100 times: "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+op);
 			}
 			abort = true;
-		}
-		if(profile.maxReturnCount>500) {
+		} else if(profile.maxReturnCount>500) {
 			if(log!=null && log.isLoggable(Level.FINEST)) {
 				log.finest("aborting because this profile may return over 500 records: "+Thread.currentThread().getName()+" "+profile+" "+beanQuery.getBaseClass()+" "+op);
 			}
 			abort = true;
-		}
-
-		if(!isSimpleAttributes(op.getAttributes())) {
+		} else if(!isSimpleAttributes(op.getAttributes())) {
 			if(log!=null && log.isLoggable(Level.FINEST)) {
 				log.finest("aborting because acceptance criteria is not simple "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+op);
 			}
@@ -1224,7 +1255,7 @@ public class Dash {
 		PooledQueryRequest myRequest = new PooledQueryRequest(op);
 		Operator template = op.getTemplateOperator();
 		CacheKey key = new CacheKey(template, comparator, beanQuery.isDistinct());
-		Collection<PooledQueryRequest> queryPool;
+		Collection<PooledQueryRequest> similarRequests;
 		Map<CacheKey, Collection<PooledQueryRequest>> queryPoolsByKey;
 		synchronized(pendingQueries) {
 			queryPoolsByKey = pendingQueries.get(beanQuery.getBaseClass());
@@ -1232,95 +1263,101 @@ public class Dash {
 				queryPoolsByKey = new HashMap<>();
 				pendingQueries.put(beanQuery.getBaseClass(), queryPoolsByKey);
 			}
-			queryPool = queryPoolsByKey.get(key);
-			if(queryPool==null) {
-				queryPool = new LinkedList<>();
-				queryPoolsByKey.put(key, queryPool);
+			similarRequests = queryPoolsByKey.get(key);
+			if(similarRequests==null) {
+				similarRequests = new LinkedList<>();
+				queryPoolsByKey.put(key, similarRequests);
 			}
-			queryPool.add(myRequest);
+			similarRequests.add(myRequest);
 		}
 		
 		querySemaphore.acquireUninterruptibly();
 		try {
-			PooledQueryRequest[] requests;
+			boolean acquiredRequestLocks = false;
 			synchronized(pendingQueries) {
-				requests = queryPool.toArray(new PooledQueryRequest[queryPool.size()]);
-				queryPool.clear();
-				for(PooledQueryRequest r : requests) {
-					r.lock.acquireUninterruptibly();
+				queryPoolsByKey.put(key, new LinkedList<PooledQueryRequest>());
+				for(PooledQueryRequest request : similarRequests) {
+					if(request.results==null) {
+						acquiredRequestLocks = true;
+						request.lock.acquireUninterruptibly();
+						request.results = new LinkedList<>();
+					}
 				}
 			}
-			try {
-				if(requests.length>0) {
-					//we are the thread that picked up these requests
-					if(requests.length==1) {
-						//nothing clever to do here
-						return broker.getIteratorByQuery(beanQuery);
-					}
-					
-					//we have multiple requests in our pool:
-					List<Operator> allOperators = new ArrayList<>();
-					for(PooledQueryRequest r : requests) {
-						for(Operator z : r.operator.split()) {
-							allOperators.add(z);
-						}
-					}
-					Operator joined = Operator.join(allOperators);
-					Criteria joinedCriteria = createCriteria(joined);
-					
-					BeanQuery joinedQuery = new BeanQuery(beanQuery.getBaseClass(), joinedCriteria);
-					for(FieldHelper h : comparator.getFieldHelpers()) {
-						joinedQuery.addOrderBy(h);
-					}
-					int ctr = 0;
-					try(QueryIterator iter = broker.getIteratorByQuery(joinedQuery)) {
-						while(iter.hasNext()) {
-							X2BaseBean bean = (X2BaseBean) iter.next();
-							for(PooledQueryRequest r : requests) {
-								if(r.operator.evaluate(CONTEXT, bean)) {
-									r.results.add(bean);
-								}
-							}
-							ctr++;
+			
+			if(acquiredRequestLocks) {
+				try {
+					if(similarRequests.size()>0) {
+						//we are the thread that picked up these requests
+						if(similarRequests.size()==1) {
+							//nothing clever to do here
+							return broker.getIteratorByQuery(beanQuery);
 						}
 						
-						if(log!=null && log.isLoggable(Level.FINER)) {
-							log.fine("Pooled "+requests.length+" into one request, "+ctr+" results: "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+joined);
-							if(log.isLoggable(Level.FINEST)) {
-								for(PooledQueryRequest r : requests) {
-									log.finest(r.operator.toString());
-								}
+						//we have multiple requests in our pool:
+						List<Operator> allOperators = new ArrayList<>();
+						for(PooledQueryRequest request : similarRequests) {
+							for(Operator z : request.operator.split()) {
+								allOperators.add(z);
 							}
 						}
-						cacheResults.increment(CacheResults.Type.GROUP_QUERY_ISSUED);
-					} catch(RuntimeException e) {
-						throw e;
-					} catch (Exception e) {
-						//this shouldn't happen
-						throw new RuntimeException(e);
+						Operator joined = Operator.join(allOperators);
+						Criteria joinedCriteria = createCriteria(joined);
+						
+						BeanQuery joinedQuery = new BeanQuery(beanQuery.getBaseClass(), joinedCriteria);
+						for(FieldHelper h : comparator.getFieldHelpers()) {
+							joinedQuery.addOrderBy(h);
+						}
+						int ctr = 0;
+						try(QueryIterator iter = broker.getIteratorByQuery(joinedQuery)) {
+							while(iter.hasNext()) {
+								X2BaseBean bean = (X2BaseBean) iter.next();
+								for(PooledQueryRequest request : similarRequests) {
+									if(request.operator.evaluate(CONTEXT, bean)) {
+										request.results.add(bean);
+									}
+								}
+								ctr++;
+							}
+							
+							if(log!=null && log.isLoggable(Level.FINER)) {
+								log.fine("Pooled "+similarRequests.size()+" into one request, "+ctr+" results: "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+joined);
+								if(log.isLoggable(Level.FINEST)) {
+									for(PooledQueryRequest request : similarRequests) {
+										log.finest(request.operator.toString());
+									}
+								}
+							}
+							cacheResults.increment(CacheResults.Type.GROUP_QUERY_ISSUED);
+						} catch(RuntimeException e) {
+							throw e;
+						} catch (Exception e) {
+							//this shouldn't happen
+							throw new RuntimeException(e);
+						}
+						
+						return new QueryIteratorDash(this, myRequest.results);
 					}
-					
-					return new QueryIteratorDash(this, myRequest.results);
-				}
-				
-				//another thread processed our request:
-				myRequest.lock.acquireUninterruptibly();
-				try {
-					if(log!=null && log.isLoggable(Level.FINER)) {
-						log.fine("another thread picked up this query: "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+op);
-					}
-					cacheResults.increment(CacheResults.Type.GROUP_QUERY_HIT);
-					return new QueryIteratorDash(this, myRequest.results);
 				} finally {
-					myRequest.lock.release();
-				}
-			} finally {
-				for(PooledQueryRequest r : requests) {
-					r.lock.release();
+					for(PooledQueryRequest request : similarRequests) {
+						request.lock.release();
+					}
 				}
 			}
 		} finally {
 			querySemaphore.release();
+		}
+
+		//another thread processed our request:
+		myRequest.lock.acquireUninterruptibly();
+		try {
+			if(log!=null && log.isLoggable(Level.FINER)) {
+				log.fine("another thread picked up this query: "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+op);
+			}
+			cacheResults.increment(CacheResults.Type.GROUP_QUERY_HIT);
+			return new QueryIteratorDash(this, myRequest.results);
+		} finally {
+			myRequest.lock.release();
 		}
 	}
 
