@@ -1215,11 +1215,6 @@ public class Dash {
 		}
 	}
 	
-	public void setPoolLogger(Logger logger) {
-		poolLogger = logger;
-	}
-	
-	Logger poolLogger;
 	Map<Class, Map<CacheKey, Collection<PooledQueryRequest>>> pendingQueries = new HashMap<>();
 	
 	/**
@@ -1228,7 +1223,7 @@ public class Dash {
 	Semaphore querySemaphore;
 
 	protected QueryIterator createPooledQueryIterator(X2Broker broker,QueryByCriteria beanQuery,Operator op,TemplateQueryProfile profile, OrderByComparator comparator) {
-		Logger log = poolLogger;
+		Logger log = getLog();
 		boolean abort = false;
 		if(querySemaphore==null) {
 			abort = true;
