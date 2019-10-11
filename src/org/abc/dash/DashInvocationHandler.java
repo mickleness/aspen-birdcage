@@ -18,9 +18,11 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
+import org.apache.ojb.broker.query.Criteria;
 import org.apache.ojb.broker.query.Query;
 import org.apache.ojb.broker.query.QueryByCriteria;
 
+import com.follett.fsc.core.framework.persistence.BeanQuery;
 import com.follett.fsc.core.framework.persistence.InsertQuery;
 import com.follett.fsc.core.framework.persistence.UpdateQuery;
 import com.follett.fsc.core.k12.beans.QueryIterator;
@@ -320,6 +322,16 @@ class DashInvocationHandler implements InvocationHandler {
 						beanType, beanOid);
 				if (bean != null)
 					return bean;
+			}
+			
+			// convert to a BeanQuery to pass through other caching layers:
+			Criteria criteria = new Criteria();
+			criteria.addEqualTo(X2BaseBean.COL_OID, beanOid);
+			BeanQuery beanQuery = new BeanQuery(beanType, criteria);
+			try(QueryIterator iter = (QueryIterator) invoke(proxy, method_getIteratorByQuery, new Object[] { beanQuery })) {
+				if(iter.hasNext())
+					return iter.next();
+				return null;
 			}
 		} else if (method_getIteratorByQuery.equals(method)
 				&& Dash.isBeanQuery(args[0])) {
