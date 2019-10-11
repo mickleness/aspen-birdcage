@@ -908,11 +908,17 @@ public class Dash {
 		}
 
 		boolean usesOids = request.operator.getAttributes().contains(X2BaseBean.COL_OID);
-		Cache<CacheKey, List<String>> cache = getCache(
-				request.beanQuery.getBaseClass(), true);
-		CacheKey cacheKey = new CacheKey(request.operator, request.orderBy,
-				request.beanQuery.isDistinct());
-		List<String> beanOids = usesOids ? null : cache.get(cacheKey);
+
+		Cache<CacheKey, List<String>> cache = null;
+		CacheKey cacheKey = null;
+		List<String> beanOids = null;
+		if(!usesOids) {
+			cache = getCache(
+					request.beanQuery.getBaseClass(), true);
+			cacheKey = new CacheKey(request.operator, request.orderBy,
+					request.beanQuery.isDistinct());
+			beanOids = cache.get(cacheKey);
+		}
 
 		if (beanOids != null) {
 			List<X2BaseBean> beans = getBeansByOid(request.beanQuery.getBaseClass(), beanOids);
@@ -940,7 +946,7 @@ public class Dash {
 		Operator canonicalOperator = request.operator.getCanonicalOperator();
 		Collection<Operator> splitOperators = canonicalOperator.split();
 
-		if (splitOperators.size() <= 1 || !isCachingSplit(request) || usesOids) {
+		if (splitOperators.size() <= 1 || !isCachingSplit(request)) {
 			// this is the simple scenario (no splitting)
 			Collection<X2BaseBean> beansToReturn = new LinkedList<>();
 			QueryIterator iter = createPooledQueryIterator(broker, request.beanQuery, request.operator, request.profile, request.orderBy);
@@ -968,8 +974,8 @@ public class Dash {
 
 			// We have all the beans. Cache the oids for next time and return.
 
-			if(!usesOids) {
-				beanOids = new LinkedList<>();
+			if(cache!=null) {
+				beanOids = new ArrayList<>(beansToReturn.size());
 				for (X2BaseBean bean : beansToReturn) {
 					beanOids.add(bean.getOid());
 				}
@@ -978,7 +984,7 @@ public class Dash {
 
 			QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn);
 			if (log.isLoggable(Level.INFO))
-				log.info("queried " + ctr + " iterations for " + request+": "+beanOids);
+				log.info("queried " + ctr + " iterations for " + request+": "+toString(beansToReturn));
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_MISS);
 		}
@@ -1001,10 +1007,14 @@ public class Dash {
 		int removedOperators = 0;
 		while (splitOpIter.hasNext()) {
 			Operator splitOperator = splitOpIter.next();
-			CacheKey splitKey = new CacheKey(splitOperator, request.orderBy,
-					request.beanQuery.isDistinct());
+			CacheKey splitKey = null;
+			List<String> splitOids = null;
+			if(cache != null) {
+				splitKey = new CacheKey(splitOperator, request.orderBy,
+						request.beanQuery.isDistinct());
+				splitOids = cache.get(splitKey);
+			}
 
-			List<String> splitOids = cache.get(splitKey);
 			if (splitOids != null) {
 				List<X2BaseBean> splitBeans = getBeansByOid(
 						request.beanQuery.getBaseClass(), splitOids);
@@ -1097,37 +1107,39 @@ public class Dash {
 		// we have all the beans; now we just have to stores things in our cache
 		// for next time
 
-		beanOids = new LinkedList<>();
-		for (X2BaseBean bean : knownBeans) {
-			beanOids.add(bean.getOid());
-		}
-		cache.put(cacheKey, beanOids);
-
-		if (isCachingSplitResults(request, knownBeans)) {
-			scanOps : for (Operator op : splitOperators) {
-				List<String> oids = new LinkedList<>();
-
-				for (X2BaseBean bean : knownBeans) {
-					try {
-						if (op.evaluate(Dash.CONTEXT, bean)) {
-							oids.add(bean.getOid());
+		if(cache!=null) {
+			beanOids = new ArrayList<>(knownBeans.size());
+			for (X2BaseBean bean : knownBeans) {
+				beanOids.add(bean.getOid());
+			}
+			cache.put(cacheKey, beanOids);
+		
+			if (isCachingSplitResults(request, knownBeans)) {
+				scanOps : for (Operator op : splitOperators) {
+					List<String> oids = new LinkedList<>();
+	
+					for (X2BaseBean bean : knownBeans) {
+						try {
+							if (op.evaluate(Dash.CONTEXT, bean)) {
+								oids.add(bean.getOid());
+							}
+						} catch (Exception e) {
+							UncaughtExceptionHandler ueh = getUncaughtExceptionHandler();
+							Exception e2 = new Exception(
+									"An error occurred evaluating \"" + op
+											+ "\" on \"" + bean + "\"", e);
+							ueh.uncaughtException(Thread.currentThread(), e2);
+							continue scanOps;
 						}
-					} catch (Exception e) {
-						UncaughtExceptionHandler ueh = getUncaughtExceptionHandler();
-						Exception e2 = new Exception(
-								"An error occurred evaluating \"" + op
-										+ "\" on \"" + bean + "\"", e);
-						ueh.uncaughtException(Thread.currentThread(), e2);
-						continue scanOps;
 					}
+	
+					CacheKey splitKey = new CacheKey(op, request.orderBy,
+							ourQuery.isDistinct());
+					cache.put(splitKey, oids);
+					if (log.isLoggable(Level.INFO))
+						log.info("identified " + oids.size()
+								+ " oids for split query \"" + op+"\": "+oids);
 				}
-
-				CacheKey splitKey = new CacheKey(op, request.orderBy,
-						ourQuery.isDistinct());
-				cache.put(splitKey, oids);
-				if (log.isLoggable(Level.INFO))
-					log.info("identified " + oids.size()
-							+ " oids for split query \"" + op+"\": "+oids);
 			}
 		}
 
@@ -1136,15 +1148,28 @@ public class Dash {
 			if (log.isLoggable(Level.INFO))
 				log.info("queried " + ctr + " iterations (with "
 						+ removedOperators + " cached split queries) for "
-						+ request+": "+beanOids);
+						+ request+": "+toString(knownBeans));
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_REDUCED_FROM_SPLIT);
 		} else {
 			if (log.isLoggable(Level.INFO))
-				log.info("queried " + ctr + " iterations for " + request+": "+beanOids);
+				log.info("queried " + ctr + " iterations for " + request+": "+toString(knownBeans));
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_MISS);
 		}
+	}
+	
+	private static String toString(Collection<X2BaseBean> beans) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("[");
+		Iterator<X2BaseBean> iter = beans.iterator();
+		while(iter.hasNext()) {
+			if(sb.length()>1)
+				sb.append(", ");
+			sb.append(iter.next().getOid());
+		}
+		sb.append("]");
+		return sb.toString();
 	}
 	
 	static class PooledQueryRequest {
@@ -1179,9 +1204,9 @@ public class Dash {
 			}
 			abort = true;
 		}
-		if(profile.maxReturnCount>400) {
+		if(profile.maxReturnCount>500) {
 			if(log!=null && log.isLoggable(Level.FINEST)) {
-				log.finest("aborting because this profile may return over 400 records: "+Thread.currentThread().getName()+" "+profile+" "+beanQuery.getBaseClass()+" "+op);
+				log.finest("aborting because this profile may return over 500 records: "+Thread.currentThread().getName()+" "+profile+" "+beanQuery.getBaseClass()+" "+op);
 			}
 			abort = true;
 		}
@@ -1222,10 +1247,6 @@ public class Dash {
 				requests = queryPool.toArray(new PooledQueryRequest[queryPool.size()]);
 				queryPool.clear();
 				for(PooledQueryRequest r : requests) {
-					if(r==null)
-						throw new NullPointerException("request is null");
-					if(r.lock==null)
-						throw new NullPointerException("request lock is null");
 					r.lock.acquireUninterruptibly();
 				}
 			}
@@ -1244,12 +1265,7 @@ public class Dash {
 							allOperators.add(z);
 						}
 					}
-					Operator joined;
-					try {
-						joined = Operator.join(allOperators);
-					} catch(RuntimeException e) {
-						throw new RuntimeException(Arrays.asList(requests).toString()+"~~"+allOperators.toString(), e);
-					}
+					Operator joined = Operator.join(allOperators);
 					Criteria joinedCriteria = createCriteria(joined);
 					
 					BeanQuery joinedQuery = new BeanQuery(beanQuery.getBaseClass(), joinedCriteria);
