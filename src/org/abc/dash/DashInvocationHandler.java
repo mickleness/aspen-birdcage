@@ -18,6 +18,7 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
+import org.abc.tools.ThreadedBrokerIterator;
 import org.apache.ojb.broker.query.Criteria;
 import org.apache.ojb.broker.query.Query;
 import org.apache.ojb.broker.query.QueryByCriteria;
@@ -179,7 +180,7 @@ class DashInvocationHandler implements InvocationHandler {
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args)
 			throws Throwable {
-		ThreadUtils.checkInterrupt();
+		ThreadedBrokerIterator.checkInterruptNoYield();
 		
 		// The following purges (some) cached info every 30 seconds.
 		// This is NOT essential for the caches to drop elements.
@@ -364,7 +365,7 @@ class DashInvocationHandler implements InvocationHandler {
 					method_getIteratorByQuery, args)) {
 				Collection<X2BaseBean> result = new ArrayList<>();
 				while (queryIter.hasNext()) {
-					ThreadUtils.checkInterrupt();
+					ThreadedBrokerIterator.checkInterruptNoYield();
 
 					X2BaseBean bean = (X2BaseBean) queryIter.next();
 					result.add(bean);
@@ -496,7 +497,7 @@ class DashInvocationHandler implements InvocationHandler {
 
 			Map map = new HashMap(mapSizes[0]);
 			while (queryIter.hasNext()) {
-				ThreadUtils.checkInterrupt();
+				ThreadedBrokerIterator.checkInterruptNoYield();
 
 				X2BaseBean bean = (X2BaseBean) queryIter.next();
 				Map currentMap = map;

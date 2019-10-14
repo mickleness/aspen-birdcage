@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
+import org.abc.tools.ThreadedBrokerIterator;
 import org.apache.ojb.broker.PersistenceBroker;
 import org.apache.ojb.broker.query.Query;
 
@@ -149,7 +150,7 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 
 	@Override
 	public X2BaseBean next() {
-		ThreadUtils.checkInterrupt();
+		ThreadedBrokerIterator.checkInterruptNoYield();
 
 		if (queryIterator != null) {
 			if (queryIterator.hasNext()) {

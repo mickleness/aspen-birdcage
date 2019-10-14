@@ -980,7 +980,7 @@ public class Dash {
 			int ctr = 0;
 			int maxSize = getMaxOidListSize(false, request.beanQuery);
 			while (iter.hasNext() && ctr < maxSize) {
-				ThreadUtils.checkInterrupt();
+				ThreadedBrokerIterator.checkInterruptNoYield();
 
 				X2BaseBean bean = (X2BaseBean) iter.next();
 				storeBean(bean);
@@ -1113,7 +1113,7 @@ public class Dash {
 		int ctr = 0;
 		int maxSize = getMaxOidListSize(removedOperators > 0, ourQuery);
 		while (iter.hasNext() && ctr < maxSize) {
-			ThreadUtils.checkInterrupt();
+			ThreadedBrokerIterator.checkInterruptNoYield();
 
 			X2BaseBean bean = (X2BaseBean) iter.next();
 			storeBean(bean);
