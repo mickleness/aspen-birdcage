@@ -231,7 +231,7 @@ class DashInvocationHandler implements InvocationHandler {
 					long t = System.currentTimeMillis();
 					Object returnValue = invokeCached(proxy, method, args);
 					t = System.currentTimeMillis() - t;
-					if ((t > 10 || returnValue!=null) && log != null) {
+					if ((t > 10 || returnValue!=null) && log != null && log.isLoggable(Level.FINEST)) {
 						logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
 					}
 					return returnValue;
@@ -260,7 +260,7 @@ class DashInvocationHandler implements InvocationHandler {
 			Object returnValue = method.invoke(broker, args);
 			t = System.currentTimeMillis() - t;
 			
-			if ((t > 10 || returnValue!=null) && log != null) {
+			if ((t > 10 || returnValue!=null) && log != null && log.isLoggable(Level.FINEST)) {
 				logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
 			}
 
