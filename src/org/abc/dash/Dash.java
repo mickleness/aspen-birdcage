@@ -1267,9 +1267,6 @@ public class Dash {
 		
 		querySemaphore.acquireUninterruptibly();
 		try {
-			//nudge rival threads to pile on to our queue before look at it
-			Thread.yield();
-			
 			boolean acquiredRequestLocks = false;
 			synchronized(pendingQueries) {
 				queryPoolsByKey.put(key, new LinkedList<PooledQueryRequest>());
