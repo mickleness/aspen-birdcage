@@ -971,8 +971,7 @@ public class Dash {
 
 		// we couldn't retrieve the entire query results from our cache
 
-		Operator canonicalOperator = request.operator.getCanonicalOperator();
-		Collection<Operator> splitOperators = canonicalOperator.split();
+		Collection<Operator> splitOperators = request.operator.split();
 
 		if (splitOperators.size() <= 1 || !isCachingSplit(request)) {
 			// this is the simple scenario (no splitting)
