@@ -53,7 +53,6 @@ import com.pump.data.operator.Operator;
 import com.pump.data.operator.OperatorContext;
 import com.pump.util.Cache;
 import com.pump.util.Cache.CachePool;
-import com.pump.util.ReentrantPermitLock;
 import com.x2dev.utils.StringUtils;
 
 /**
@@ -107,21 +106,6 @@ import com.x2dev.utils.StringUtils;
  */
 @Tool(name = "Dash (Caching Layer)", id = "DASH-CACHE", type = "Procedure")
 public class Dash {
-	
-	/**
-	 * This returns immediately when you request a lock.
-	 */
-	public static final ReentrantPermitLock NO_LOCK = new ReentrantPermitLock(1) {
-
-		@Override
-		public void acquireUninterruptibly() {
-		}
-
-		@Override
-		public void release() {
-		}
-		
-	};
 
 	/**
 	 * This ThreadedBrokerIterator converts X2Brokers to DashBrokers (so they
@@ -291,6 +275,7 @@ public class Dash {
 	 *            the oid of the bean to return.
 	 * @return
 	 */
+	@SuppressWarnings("rawtypes")
 	public static X2BaseBean getBeanFromGlobalCache(
 			PersistenceKey persistenceKey, Class<?> beanClass, String beanOid) {
 		Objects.requireNonNull(persistenceKey);
@@ -674,13 +659,17 @@ public class Dash {
 	 * 
 	 * @param cachePool
 	 *            the CachePool used to maintain all cached data.
-	 * @param databaseLockLimit
-	 *            the number of threads that can simultaneously interact with the database.
+	 * @param activeQueryLimit
+	 *            the number of threads that can simultaneously issue queries.
+	 *            <p>
+	 *            If this is not a positive number then this feature is unused.
+	 *            See "Query Consolidation" in class javadoc for details.
+	 *            
 	 */
-	public Dash(PersistenceKey persistenceKey, CachePool cachePool, int databaseLockLimit) {
+	public Dash(PersistenceKey persistenceKey, CachePool cachePool, int activeQueryLimit) {
 		Objects.requireNonNull(cachePool);
 		Objects.requireNonNull(persistenceKey);
-		databaseLock = databaseLockLimit<=0 ? NO_LOCK : new ReentrantPermitLock(databaseLockLimit);
+		querySemaphore = activeQueryLimit>=1 ? new Semaphore(activeQueryLimit) : null;
 		this.cachePool = cachePool;
 		this.persistenceKey = persistenceKey;
 		profiles = new Cache<>(cachePool);
@@ -830,37 +819,39 @@ public class Dash {
 	 */
 	@SuppressWarnings({ "rawtypes" })
 	public QueryIterator createQueryIterator(X2Broker broker,
-			QueryByCriteria query) {
+			QueryByCriteria beanQuery) {
 		validatePersistenceKey(broker.getPersistenceKey());
 
 		if (!isQueryCachingActive()) {
-			return getIteratorByQueryInsideLock(broker, query);
+			QueryIterator iter = broker.getIteratorByQuery(beanQuery);
+			QueryIteratorDash dashIter = new QueryIteratorDash(this, null, iter);
+			return dashIter;
 		}
 
 		Logger log = getLog();
-		if (!isBeanQuery(query)) {
+		if (!isBeanQuery(beanQuery)) {
 			if (log.isLoggable(Level.INFO))
-				log.info("skipping for non-bean-query: " + query);
+				log.info("skipping for non-bean-query: " + beanQuery);
 			// the DashInvocationHandler won't even call this method if
 			// isBeanQuery(..)==false
 			cacheResults.increment(CacheResults.Type.QUERY_SKIP_UNSUPPORTED);
-			return getIteratorByQueryInsideLock(broker, query);
+			return broker.getIteratorByQuery(beanQuery);
 		}
 
 		Operator operator;
 		try {
-			operator = createOperator(query.getCriteria());
+			operator = createOperator(beanQuery.getCriteria());
 		} catch (Exception e) {
 			// this Criteria can't be converted to an Operator, so we should
 			// give up:
 
 			cacheResults.increment(CacheResults.Type.QUERY_SKIP_UNSUPPORTED);
-			return getIteratorByQueryInsideLock(broker, query);
+			return broker.getIteratorByQuery(beanQuery);
 		}
 
 		Operator template = operator.getTemplateOperator();
 		TemplateQueryProfileKey profileKey = new TemplateQueryProfileKey(
-				template, query.getBaseClass());
+				template, beanQuery.getBaseClass());
 
 		if (log.isLoggable(Level.INFO))
 			log.info("template: " + template);
@@ -877,9 +868,9 @@ public class Dash {
 			log.info("profile: " + profile);
 
 		OrderByComparator orderBy = new OrderByComparator(false,
-				query.getOrderBy());
+				beanQuery.getOrderBy());
 
-		QueryRequest request = new QueryRequest(query, operator, profile,
+		QueryRequest request = new QueryRequest(beanQuery, operator, profile,
 				orderBy);
 
 		Map.Entry<QueryIterator, CacheResults.Type> results = createCachedQueryIterator(
@@ -935,9 +926,10 @@ public class Dash {
 			X2Broker broker, QueryRequest request) {
 		Logger log = getLog();
 		if (!isCaching(request)) {
-			QueryIterator iter = getIteratorByQueryInsideLock(broker, request.beanQuery);
+			QueryIterator iter = broker.getIteratorByQuery(request.beanQuery);
 			if (log.isLoggable(Level.INFO))
 				log.info("aborting to default broker");
+			iter = new QueryIteratorDash(this, null, iter);
 			return new AbstractMap.SimpleEntry<>(iter,
 					CacheResults.Type.QUERY_SKIP);
 		}
@@ -1224,14 +1216,16 @@ public class Dash {
 	Map<Class, Map<CacheKey, Collection<PooledQueryRequest>>> pendingQueries = new HashMap<>();
 	
 	/**
-	 * Queries are issued inside this lock.
+	 * Queries are issued inside this semaphore (as much as possible).
 	 */
-	ReentrantPermitLock databaseLock;
+	Semaphore querySemaphore;
 
 	protected QueryIterator createPooledQueryIterator(X2Broker broker,QueryByCriteria beanQuery,Operator op,TemplateQueryProfile profile, OrderByComparator comparator) {
 		Logger log = getLog();
 		boolean abort = false;
-		if(profile.ctr<100) {
+		if(querySemaphore==null) {
+			abort = true;
+		} else if(profile.ctr<100) {
 			if(log!=null && log.isLoggable(Level.FINEST)) {
 				log.finest("aborting because profile used fewer than 100 times: "+Thread.currentThread().getName()+" "+beanQuery.getBaseClass()+" "+op);
 			}
@@ -1248,7 +1242,7 @@ public class Dash {
 			abort = true;
 		}
 		if(abort) {
-			return getIteratorByQueryInsideLock(broker, beanQuery);
+			return broker.getIteratorByQuery(beanQuery);
 		}
 		
 		PooledQueryRequest myRequest = new PooledQueryRequest(op);
@@ -1270,7 +1264,7 @@ public class Dash {
 			similarRequests.add(myRequest);
 		}
 		
-		databaseLock.acquireUninterruptibly();
+		querySemaphore.acquireUninterruptibly();
 		try {
 			boolean acquiredRequestLocks = false;
 			synchronized(pendingQueries) {
@@ -1344,7 +1338,7 @@ public class Dash {
 				}
 			}
 		} finally {
-			databaseLock.release();
+			querySemaphore.release();
 		}
 
 		//another thread processed our request:
@@ -1358,69 +1352,6 @@ public class Dash {
 		} finally {
 			myRequest.lock.release();
 		}
-	}
-
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	private QueryIteratorDash getIteratorByQueryInsideLock(X2Broker broker,
-			QueryByCriteria query) {
-		databaseLock.acquireUninterruptibly();
-		QueryIteratorDash dashIter = null;
-		List elements = new LinkedList();
-		QueryIterator iter = null;
-		boolean releasedLock = false;
-		try {
-			iter = broker.getIteratorByQuery(query);
-				
-			// In an ideal world where QueryIterator#close() is always
-			// reliably called: we don't need to pre-load any elements.
-			// But we don't fully trust our callers to always call
-			// #close(), so let's try (within a reasonable limit)
-			// to preload elements and if possible close the iterator
-			// ourselves.
-			
-			int max = 5000;
-			int ctr = 0;
-			while(iter.hasNext() && ctr<max) {
-				elements.add(iter.next());
-				ctr++;
-			}
-			
-			if(iter.hasNext()) {
-				dashIter = new QueryIteratorDash(this, elements, iter);
-			} else {
-				try {
-					iter.close();
-				} finally {
-					databaseLock.release();
-					releasedLock = true;
-				}
-				dashIter = new QueryIteratorDash(this, elements);
-			}
-		} finally {
-			if(dashIter == null) {
-				// we didn't exit healthily, so some sort of exception is
-				// being thrown. Close our iterator and release the lock
-				try {
-					if(iter!=null)
-						iter.close();
-				} finally {
-					if(!releasedLock)
-						databaseLock.release();
-				}
-			} else if(dashIter != null && !releasedLock) {
-				// keep our lock until we're completely closed
-				dashIter.addCloseListener(new QueryIteratorDash.CloseListener() {
-
-					@Override
-					public void closedIterator(int returnCount, boolean hasNext) {
-						databaseLock.release();
-					}
-					
-				});
-			}
-		}
-		
-		return dashIter;
 	}
 
 	/**
@@ -1551,13 +1482,6 @@ public class Dash {
 		Logger log = getLog();
 		if (log.isLoggable(Level.INFO))
 			log.info(beanType.getName());
-	}
-	
-	/**
-	 * All database activity should only occur while holding a permit of this lock.
-	 */
-	public ReentrantPermitLock getLock() {
-		return databaseLock;
 	}
 
 	/**
