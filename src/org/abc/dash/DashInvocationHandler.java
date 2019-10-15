@@ -29,8 +29,8 @@ import com.follett.fsc.core.framework.persistence.UpdateQuery;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
 import com.follett.fsc.core.k12.business.X2Broker;
+import com.pump.util.ReentrantPermitLock;
 import com.x2dev.utils.LoggerUtils;
-import com.x2dev.utils.ThreadUtils;
 
 /**
  * This implements the BrokerDash (and all the X2Broker methods).
@@ -176,6 +176,13 @@ class DashInvocationHandler implements InvocationHandler {
 	
 	private IndentionHandler indentHandler;
 	long lastPurge = -1;
+	
+	private ReentrantPermitLock getLock(Method method) {
+		String methodName = method.getName();
+		if("getPersistenceKey".equals(methodName) || methodName.startsWith("is") || methodName.startsWith("add"))
+			return Dash.NO_LOCK;
+		return dash.getLock();
+	}
 
 	@Override
 	public Object invoke(Object proxy, Method method, Object[] args)
@@ -258,7 +265,14 @@ class DashInvocationHandler implements InvocationHandler {
 			// model/layer:
 
 			long t = System.currentTimeMillis();
-			Object returnValue = method.invoke(broker, args);
+			ReentrantPermitLock s = getLock(method);
+			s.acquireUninterruptibly();
+			Object returnValue;
+			try {
+				returnValue = method.invoke(broker, args);
+			} finally {
+				s.release();
+			}
 			t = System.currentTimeMillis() - t;
 			
 			if ((t > 10 || returnValue!=null) && log != null && log.isLoggable(Level.FINEST)) {
@@ -448,7 +462,14 @@ class DashInvocationHandler implements InvocationHandler {
 			}
 		}
 		
-		Object returnValue = method.invoke(broker, args);
+		Object returnValue;
+		ReentrantPermitLock lock = getLock(method);
+		lock.acquireUninterruptibly();
+		try {
+			returnValue = method.invoke(broker, args);
+		} finally {
+			lock.release();
+		}
 		if (returnValue instanceof X2BaseBean) {
 			dash.storeBean((X2BaseBean) returnValue);
 		}
