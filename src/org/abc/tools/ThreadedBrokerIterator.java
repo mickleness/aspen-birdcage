@@ -76,7 +76,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 		public ThreadedException(Map<Exception, Object> exceptions) {
 			this.exceptions = Collections.unmodifiableMap(exceptions);
 			// let the natural caused-by chain be as informative as possible
-			if (exceptions.size() == 1)
+			if (exceptions.size() > 0)
 				initCause(exceptions.keySet().iterator().next());
 		}
 
