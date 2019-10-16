@@ -23,7 +23,6 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -87,7 +86,7 @@ import com.x2dev.utils.StringUtils;
  * elements are purged from the cache, so it will not grow 
  * indefinitely.</li></ul>
  */
-@Tool(name = "Dash (Caching Layer)", id = "DASH-CACHE", type = "Procedure")
+@Tool(name = "Dash (Caching Layer)", id = "ABC-DASH-CACHE", type = "Procedure")
 public class Dash {
 
 	/**
@@ -258,7 +257,6 @@ public class Dash {
 	 *            the oid of the bean to return.
 	 * @return
 	 */
-	@SuppressWarnings("rawtypes")
 	public static X2BaseBean getBeanFromGlobalCache(
 			PersistenceKey persistenceKey, Class<?> beanClass, String beanOid) {
 		Objects.requireNonNull(persistenceKey);
@@ -279,6 +277,7 @@ public class Dash {
 	/**
 	 * Return the bean class associated with an oid.
 	 */
+	@SuppressWarnings("rawtypes")
 	public static Class<?> getBeanTypeFromOid(String beanOid) {
 		Objects.requireNonNull(beanOid);
 		
@@ -294,6 +293,7 @@ public class Dash {
 	 * Return true if the argument is a QueryByCriteria whose base class is an
 	 * X2BaseBean.
 	 */
+	@SuppressWarnings("rawtypes")
 	public static boolean isBeanQuery(Object object) {
 		if (!(object instanceof QueryByCriteria))
 			return false;
@@ -595,6 +595,7 @@ public class Dash {
 	private Logger log = Logger.getAnonymousLogger();
 	private ThreadLocal<Logger> logByThread = new ThreadLocal<>();
 
+	@SuppressWarnings("rawtypes")
 	protected Collection<Class> modifiedBeanTypes = new HashSet<>();
 	protected UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
 	protected WeakReferenceBeanCache weakReferenceCache;
@@ -697,6 +698,7 @@ public class Dash {
 	 * @param beanOid
 	 * @return
 	 */
+	@SuppressWarnings("rawtypes")
 	public X2BaseBean getBeanByOid(Class beanClass, String beanOid) {
 		if (isOidCachingActive() == false || beanOid==null)
 			return null;
@@ -781,7 +783,7 @@ public class Dash {
 	 * those pieces we could uncache and others we could not.</li>
 	 * </ul>
 	 */
-	@SuppressWarnings({ "rawtypes" })
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public QueryIterator createQueryIterator(X2Broker broker,
 			QueryByCriteria beanQuery) {
 		validatePersistenceKey(broker.getPersistenceKey());
@@ -1276,6 +1278,7 @@ public class Dash {
 	 * @param beanType the type of bean that was modified. If this is null
 	 * then this method immediately returns.
 	 */
+	@SuppressWarnings("rawtypes")
 	public void modifyBeanRecord(Class beanType) {
 		if(beanType==null)
 			return;
@@ -1293,6 +1296,7 @@ public class Dash {
 	/**
 	 * Clear all cached information related to a given bean type.
 	 */
+	@SuppressWarnings("rawtypes")
 	public void clearCache(Class beanType) {
 		if(beanType==null)
 			return;
@@ -1510,6 +1514,7 @@ public class Dash {
 	 * cached information related beans that may have been changed during this
 	 * rollback.
 	 */
+	@SuppressWarnings("rawtypes")
 	public void clearModifiedBeanTypes() {
 		Class[] z;
 		synchronized (modifiedBeanTypes) {
