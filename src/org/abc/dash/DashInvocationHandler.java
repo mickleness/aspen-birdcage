@@ -117,42 +117,6 @@ class DashInvocationHandler implements InvocationHandler {
 		}
 	}
 
-	/**
-	 * This indents (pads) LogRecord messages a few spaces.
-	 */
-	static class IndentionHandler extends Handler {
-
-		int spaces = 2;
-
-		@Override
-		public void publish(LogRecord record) {
-			StringBuilder sb = new StringBuilder();
-			for (int a = 0; a < spaces; a++) {
-				sb.append(" ");
-			}
-			String msg = record.getMessage();
-			sb.append(msg);
-			record.setMessage(sb.toString());
-		}
-
-		@Override
-		public void flush() {
-		}
-
-		@Override
-		public void close() throws SecurityException {
-		}
-
-		public void increase() {
-			spaces += 2;
-		}
-		
-		public void decrease() {
-			spaces = Math.max(0, spaces-2);
-		}
-
-	}
-
 	X2Broker broker;
 	boolean active = initialized;
 	Dash dash;
@@ -173,7 +137,6 @@ class DashInvocationHandler implements InvocationHandler {
 		this.dash = dash;
 	}
 	
-	private IndentionHandler indentHandler;
 	long lastPurge = -1;
 
 	@Override
@@ -205,98 +168,58 @@ class DashInvocationHandler implements InvocationHandler {
 		}
 
 		Logger log = dash.getLog();
-		boolean indentHandlerCreated;
-		if(indentHandler==null) {
-			indentHandler = indentLog(log);
-			indentHandlerCreated = indentHandler!=null;
-		} else {
-			indentHandlerCreated = false;
+		logMethod(Level.FINER, method, args, null);
+		
+		// handle methods unique to the BrokerDash interface:
+		if (method_getDash.equals(method)) {
+			return dash;
+		} else if (method.getName().equals("setDashActive")) {
+			active = ((Boolean) args[0]).booleanValue();
+			return Void.TYPE;
+		} else if (method.getName().equals("isDashActive")) {
+			return active;
 		}
-		try {
-			logMethod(Level.FINER, method, args, null);
-			
-			// handle methods unique to the BrokerDash interface:
-			if (method_getDash.equals(method)) {
-				return dash;
-			} else if (method.getName().equals("setDashActive")) {
-				active = ((Boolean) args[0]).booleanValue();
-				return Void.TYPE;
-			} else if (method.getName().equals("isDashActive")) {
-				return active;
-			}
-			
-			// if possible: intercept methods using our caching model/layer
-			if (active) {
-				try {
-					long t = System.currentTimeMillis();
-					Object returnValue = invokeCached(proxy, method, args);
-					t = System.currentTimeMillis() - t;
-					if ((t > 10 || returnValue!=null) && log != null && log.isLoggable(Level.FINEST)) {
-						logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
-					}
-					return returnValue;
-				} catch(CancellationException e) {
-					throw e;
-				} catch (Exception e) {
-					Exception e2 = new Exception(
-							"An error occurred using the Dash cache architecture, so it is being deactivated.",
-							e);
-					UncaughtExceptionHandler ueh = dash.getUncaughtExceptionHandler();
-					if (ueh != null) {
-						ueh.uncaughtException(Thread.currentThread(), e2);
-					}
-
-					if (log != null && log.isLoggable(Level.WARNING))
-						log.warning(LoggerUtils.convertThrowableToString(e2));
-
-					active = false;
+		
+		// if possible: intercept methods using our caching model/layer
+		if (active) {
+			try {
+				long t = System.currentTimeMillis();
+				Object returnValue = invokeCached(proxy, method, args);
+				t = System.currentTimeMillis() - t;
+				if ((t > 10 || returnValue!=null) && log != null && log.isLoggable(Level.FINEST)) {
+					logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
 				}
-			}
+				return returnValue;
+			} catch(CancellationException e) {
+				throw e;
+			} catch (Exception e) {
+				Exception e2 = new Exception(
+						"An error occurred using the Dash cache architecture, so it is being deactivated.",
+						e);
+				UncaughtExceptionHandler ueh = dash.getUncaughtExceptionHandler();
+				if (ueh != null) {
+					ueh.uncaughtException(Thread.currentThread(), e2);
+				}
 
-			// ... if that fails: invoke the method without our caching
-			// model/layer:
+				if (log != null && log.isLoggable(Level.WARNING))
+					log.warning(LoggerUtils.convertThrowableToString(e2));
 
-			long t = System.currentTimeMillis();
-			Object returnValue = method.invoke(broker, args);
-			t = System.currentTimeMillis() - t;
-			
-			if ((t > 10 || returnValue!=null) && log != null && log.isLoggable(Level.FINEST)) {
-				logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
-			}
-
-			return returnValue;
-		} finally {
-			if(indentHandlerCreated) {
-				log.removeHandler(indentHandler);
-				indentHandler = null;
-			}
-			if(indentHandler!=null) {
-				indentHandler.decrease();
+				active = false;
 			}
 		}
-	}
 
-	/**
-	 * Install an IndentionHandler as the zeroeth handler on our Log
-	 * (so it indents messages before any other Handlers are notified).
-	 * 
-	 * @return the IndentionHandler, or null if it couldn't be created
-	 */
-	private IndentionHandler indentLog(Logger log) {
-		if (log == null)
-			return null;
-		// insert our handler as the zero-eth handler so it grabs messages
-		// before anyone else
-		IndentionHandler indentHandler = new IndentionHandler();
-		Handler[] oldHandlers = log.getHandlers();
-		for (int a = 0; a < oldHandlers.length; a++) {
-			log.removeHandler(oldHandlers[a]);
+		// ... if that fails: invoke the method without our caching
+		// model/layer:
+
+		long t = System.currentTimeMillis();
+		Object returnValue = method.invoke(broker, args);
+		t = System.currentTimeMillis() - t;
+		
+		if ((t > 10 || returnValue!=null) && log != null && log.isLoggable(Level.FINEST)) {
+			logMethod(Level.FINEST, method, args, "(ended) "+returnValue);
 		}
-		log.addHandler(indentHandler);
-		for (int a = 0; a < oldHandlers.length; a++) {
-			log.addHandler(oldHandlers[a]);
-		}
-		return indentHandler;
+
+		return returnValue;
 	}
 
 	/**
@@ -481,8 +404,6 @@ class DashInvocationHandler implements InvocationHandler {
 			}
 			log.log(level, method.getName() + " " + Arrays.asList(argsCopy));
 		}
-		if(indentHandler!=null)
-			indentHandler.increase();
 		return true;
 	}
 
