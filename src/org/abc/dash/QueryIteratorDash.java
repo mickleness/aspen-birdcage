@@ -8,24 +8,22 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 
+import org.abc.tools.ThreadedBrokerIterator;
 import org.apache.ojb.broker.PersistenceBroker;
 import org.apache.ojb.broker.query.Query;
 
 import com.follett.fsc.core.k12.beans.BeanManager.PersistenceKey;
 import com.follett.fsc.core.k12.beans.QueryIterator;
 import com.follett.fsc.core.k12.beans.X2BaseBean;
-import com.x2dev.utils.ThreadUtils;
 
 /**
- * This iterates over a series of X2BaseBeans.
- * <p>
- * This may pull data from two sources: a predefined collection of beans and/or
- * a QueryIterator.
+ * This iterates over a combination of pre-loaded objects and objects dynamically coming in
+ * from a live QueryIterator.
  * <p>
  * This iterator is not thread-safe; it is assumed this will only be used on
  * one thread.
  */
-public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
+public class QueryIteratorDash<T> extends QueryIterator<T> {
 
 	/**
 	 * This listener is notified when a QueryIteratorDash closes.
@@ -47,12 +45,15 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	/**
 	 * This is never null, although it may be empty.
 	 */
-	protected Collection<X2BaseBean> beans;
-
+	protected Collection<T> elements;
+	
+	protected boolean isClosed = false;
+	protected boolean frozenHasNext = false;
+	
 	/**
 	 * This may always be null, or it may become null on exhaustion.
 	 */
-	protected QueryIterator<X2BaseBean> queryIterator;
+	protected QueryIterator<T> queryIterator;
 
 	protected Dash dash;
 	protected List<CloseListener> closeListeners = new ArrayList<>();
@@ -63,26 +64,26 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	protected int nextCounter = 0;
 
 	/**
-	 * Create an iterator that will walk through a collection of beans.
+	 * Create an iterator that will walk through a collection of elements.
 	 * 
 	 * @param dash
 	 *            this is used to identify the persistence key and possibly to
 	 *            cache beans by their oid.
 	 */
-	public QueryIteratorDash(Dash dash, Collection<X2BaseBean> beans) {
-		this(dash, beans, null);
+	public QueryIteratorDash(Dash dash, Collection<T> elements) {
+		this(dash, elements, null);
 		// if you use this constructor: you should give us something to iterate
 		// over
-		Objects.requireNonNull(beans);
+		Objects.requireNonNull(elements);
 	}
 
 	/**
-	 * Create an iterator that will walk through a collection of beans and a
+	 * Create an iterator that will walk through a collection of elements and a
 	 * QueryIterator.
 	 * <p>
-	 * Every time a new bean is requested: if possible we pull a bean from the
-	 * QueryIterator and add it to the collection of beans. Then we return the
-	 * first bean from the collection of beans.
+	 * Every time a new element is requested: if possible we pull an element from the
+	 * QueryIterator and add it to the collection of elements. Then we return the
+	 * first element from the collection of preloaded elements.
 	 * <p>
 	 * So if the collection is a List, this approach will generate a FIFO
 	 * iterator. If the collection is a SortedSet, then this approach will merge
@@ -93,16 +94,16 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	 * @param dash
 	 *            this is used to identify the persistence key and possibly to
 	 *            cache beans by their oid.
-	 * @param beans
-	 *            an optional collection of beans to walk through. This may be
+	 * @param elements
+	 *            an optional collection of elements to walk through. This may be
 	 *            null.
 	 * @param queryIterator
 	 *            the optional QueryIterator to walk through. This may be null.
 	 */
-	public QueryIteratorDash(Dash dash, Collection<X2BaseBean> beans,
-			QueryIterator<X2BaseBean> queryIterator) {
+	public QueryIteratorDash(Dash dash, Collection<T> elements,
+			QueryIterator<T> queryIterator) {
 		Objects.requireNonNull(dash);
-		this.beans = beans == null ? new LinkedList<X2BaseBean>() : beans;
+		this.elements = elements == null ? new LinkedList<T>() : elements;
 		this.queryIterator = queryIterator;
 		this.dash = dash;
 	}
@@ -128,34 +129,40 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 
 	@Override
 	public void close() {
-		boolean hasNext = hasNext();
+		if(isClosed())
+			return;
+
+		isClosed = true;
+		frozenHasNext = hasNext();
 
 		if (queryIterator != null)
 			queryIterator.close();
 		queryIterator = null;
-		beans.clear();
+		elements.clear();
 
 		for (CloseListener listener : closeListeners
 				.toArray(new CloseListener[closeListeners.size()])) {
-			listener.closedIterator(nextCounter, hasNext);
+			listener.closedIterator(nextCounter, frozenHasNext);
 		}
 	}
 
-	@SuppressWarnings("rawtypes")
 	@Override
-	protected Iterator getIterator(PersistenceBroker arg0, Query arg1) {
+	protected Iterator<T> getIterator(PersistenceBroker arg0, Query arg1) {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public X2BaseBean next() {
-		ThreadUtils.checkInterrupt();
+	public T next() {
+		ThreadedBrokerIterator.checkInterruptNoYield();
+		if(isClosed())
+			throw new NoSuchElementException("This iterator is closed.");
 
 		if (queryIterator != null) {
 			if (queryIterator.hasNext()) {
-				X2BaseBean bean = queryIterator.next();
-				dash.storeBean(bean);
-				beans.add(bean);
+				T element = queryIterator.next();
+				if(element instanceof X2BaseBean)
+					dash.storeBean((X2BaseBean) element);
+				elements.add(element);
 			}
 			if (!queryIterator.hasNext()) {
 				queryIterator.close();
@@ -163,19 +170,22 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 			}
 		}
 
-		if (beans.size() == 0)
+		if (elements.size() == 0)
 			throw new NoSuchElementException();
 
-		Iterator<X2BaseBean> beanIter = beans.iterator();
-		X2BaseBean returnValue = beanIter.next();
-		beanIter.remove();
+		Iterator<T> elementsIter = elements.iterator();
+		T returnValue = elementsIter.next();
+		elementsIter.remove();
 		nextCounter++;
 		return returnValue;
 	}
 
 	@Override
 	public boolean hasNext() {
-		if (!beans.isEmpty())
+		if(isClosed())
+			return frozenHasNext;
+		
+		if (!elements.isEmpty())
 			return true;
 		if (queryIterator != null && queryIterator.hasNext())
 			return true;
@@ -190,5 +200,13 @@ public class QueryIteratorDash extends QueryIterator<X2BaseBean> {
 	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
+	}
+	
+	/**
+	 * Return true if {@link #isClosed()} has been called.
+	 * @return
+	 */
+	public boolean isClosed() {
+		return isClosed;
 	}
 }

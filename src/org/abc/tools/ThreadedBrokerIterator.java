@@ -76,7 +76,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 		public ThreadedException(Map<Exception, Object> exceptions) {
 			this.exceptions = Collections.unmodifiableMap(exceptions);
 			// let the natural caused-by chain be as informative as possible
-			if (exceptions.size() == 1)
+			if (exceptions.size() > 0)
 				initCause(exceptions.keySet().iterator().next());
 		}
 
@@ -87,6 +87,16 @@ public class ThreadedBrokerIterator<Input, Output> {
 			return exceptions;
 		}
 	}
+
+    /**
+     * This throws a CancellationException just like {@link ThreadUtils#checkInterrupt()},
+     * but this does NOT call Thread.yield.
+     */
+    public static void checkInterruptNoYield() {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new CancellationException("Stopped by interrupt check");
+        }
+    }
 
 	/**
 	 * This is one of the helper threads that listens for inputs and applies the
@@ -294,7 +304,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 
 			try (AutoCloseable z = getAutoCloseable(iter)) {
 				while (iter.hasNext()) {
-					ThreadUtils.checkInterrupt();
+					checkInterruptNoYield();
 
 					synchronized (exceptions) {
 						if (!exceptions.isEmpty()) {
@@ -335,7 +345,7 @@ public class ThreadedBrokerIterator<Input, Output> {
 			// we stopped adding things to our queue, but we need to make sure our
 			// helper threads addressed them all:
 			while (getActiveHelperThreadCount(threads) > 0) {
-				ThreadUtils.checkInterrupt();
+				checkInterruptNoYield();
 
 				synchronized (exceptions) {
 					if (!exceptions.isEmpty()) {

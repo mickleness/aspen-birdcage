@@ -53,7 +53,6 @@ import com.pump.data.operator.OperatorContext;
 import com.pump.util.Cache;
 import com.pump.util.Cache.CachePool;
 import com.x2dev.utils.StringUtils;
-import com.x2dev.utils.ThreadUtils;
 
 /**
  * The Dash object maintains a cache and a set of shared methods/tools that one
@@ -85,9 +84,9 @@ import com.x2dev.utils.ThreadUtils;
  * analyze those members separately. This cache is configured so after
  * X-many elements are added or Y-many milliseconds elapse the oldest 
  * elements are purged from the cache, so it will not grow 
- * indefinitely.</li></ul> 
+ * indefinitely.</li></ul>
  */
-@Tool(name = "Dash (Caching Layer)", id = "DASH-CACHE", type = "Procedure")
+@Tool(name = "Dash (Caching Layer)", id = "ABC-DASH-CACHE", type = "Procedure")
 public class Dash {
 
 	/**
@@ -258,7 +257,6 @@ public class Dash {
 	 *            the oid of the bean to return.
 	 * @return
 	 */
-	@SuppressWarnings("rawtypes")
 	public static X2BaseBean getBeanFromGlobalCache(
 			PersistenceKey persistenceKey, Class<?> beanClass, String beanOid) {
 		Objects.requireNonNull(persistenceKey);
@@ -279,6 +277,7 @@ public class Dash {
 	/**
 	 * Return the bean class associated with an oid.
 	 */
+	@SuppressWarnings("rawtypes")
 	public static Class<?> getBeanTypeFromOid(String beanOid) {
 		Objects.requireNonNull(beanOid);
 		
@@ -294,6 +293,7 @@ public class Dash {
 	 * Return true if the argument is a QueryByCriteria whose base class is an
 	 * X2BaseBean.
 	 */
+	@SuppressWarnings("rawtypes")
 	public static boolean isBeanQuery(Object object) {
 		if (!(object instanceof QueryByCriteria))
 			return false;
@@ -363,7 +363,7 @@ public class Dash {
 			/**
 			 * This indicates we tried to look up a bean by its oid but failed.
 			 */
-			OID_MISS;
+			OID_MISS
 		}
 		
 		private static final Comparator<Type> COMPARATOR =
@@ -595,6 +595,7 @@ public class Dash {
 	private Logger log = Logger.getAnonymousLogger();
 	private ThreadLocal<Logger> logByThread = new ThreadLocal<>();
 
+	@SuppressWarnings("rawtypes")
 	protected Collection<Class> modifiedBeanTypes = new HashSet<>();
 	protected UncaughtExceptionHandler uncaughtExceptionHandler = DEFAULT_UNCAUGHT_EXCEPTION_HANDLER;
 	protected WeakReferenceBeanCache weakReferenceCache;
@@ -629,6 +630,7 @@ public class Dash {
 	 * 
 	 * @param cachePool
 	 *            the CachePool used to maintain all cached data.
+	 *            
 	 */
 	public Dash(PersistenceKey persistenceKey, CachePool cachePool) {
 		Objects.requireNonNull(cachePool);
@@ -696,6 +698,7 @@ public class Dash {
 	 * @param beanOid
 	 * @return
 	 */
+	@SuppressWarnings("rawtypes")
 	public X2BaseBean getBeanByOid(Class beanClass, String beanOid) {
 		if (isOidCachingActive() == false || beanOid==null)
 			return null;
@@ -780,7 +783,7 @@ public class Dash {
 	 * those pieces we could uncache and others we could not.</li>
 	 * </ul>
 	 */
-	@SuppressWarnings({ "rawtypes" })
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public QueryIterator createQueryIterator(X2Broker broker,
 			QueryByCriteria beanQuery) {
 		validatePersistenceKey(broker.getPersistenceKey());
@@ -836,7 +839,7 @@ public class Dash {
 		QueryRequest request = new QueryRequest(beanQuery, operator, profile,
 				orderBy);
 
-		Map.Entry<QueryIterator, CacheResults.Type> results = doCreateQueryIterator(
+		Map.Entry<QueryIterator, CacheResults.Type> results = createCachedQueryIterator(
 				broker, request);
 		if (log.isLoggable(Level.INFO))
 			log.info("produced " + results);
@@ -885,7 +888,7 @@ public class Dash {
 	 *         objects.
 	 */
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	protected Map.Entry<QueryIterator, CacheResults.Type> doCreateQueryIterator(
+	protected Map.Entry<QueryIterator, CacheResults.Type> createCachedQueryIterator(
 			X2Broker broker, QueryRequest request) {
 		Logger log = getLog();
 		if (!isCaching(request)) {
@@ -897,11 +900,18 @@ public class Dash {
 					CacheResults.Type.QUERY_SKIP);
 		}
 
-		Cache<CacheKey, List<String>> cache = getCache(
-				request.beanQuery.getBaseClass(), true);
-		CacheKey cacheKey = new CacheKey(request.operator, request.orderBy,
-				request.beanQuery.isDistinct());
-		List<String> beanOids = cache.get(cacheKey);
+		boolean usesOids = request.operator.getAttributes().contains(X2BaseBean.COL_OID);
+
+		Cache<CacheKey, List<String>> cache = null;
+		CacheKey cacheKey = null;
+		List<String> beanOids = null;
+		if(!usesOids) {
+			cache = getCache(
+					request.beanQuery.getBaseClass(), true);
+			cacheKey = new CacheKey(request.operator, request.orderBy,
+					request.beanQuery.isDistinct());
+			beanOids = cache.get(cacheKey);
+		}
 
 		if (beanOids != null) {
 			List<X2BaseBean> beans = getBeansByOid(request.beanQuery.getBaseClass(), beanOids);
@@ -926,8 +936,7 @@ public class Dash {
 
 		// we couldn't retrieve the entire query results from our cache
 
-		Operator canonicalOperator = request.operator.getCanonicalOperator();
-		Collection<Operator> splitOperators = canonicalOperator.split();
+		Collection<Operator> splitOperators = request.operator.split();
 
 		if (splitOperators.size() <= 1 || !isCachingSplit(request)) {
 			// this is the simple scenario (no splitting)
@@ -936,7 +945,7 @@ public class Dash {
 			int ctr = 0;
 			int maxSize = getMaxOidListSize(false, request.beanQuery);
 			while (iter.hasNext() && ctr < maxSize) {
-				ThreadUtils.checkInterrupt();
+				ThreadedBrokerIterator.checkInterruptNoYield();
 
 				X2BaseBean bean = (X2BaseBean) iter.next();
 				storeBean(bean);
@@ -957,15 +966,17 @@ public class Dash {
 
 			// We have all the beans. Cache the oids for next time and return.
 
-			beanOids = new LinkedList<>();
-			for (X2BaseBean bean : beansToReturn) {
-				beanOids.add(bean.getOid());
+			if(cache!=null) {
+				beanOids = new ArrayList<>(beansToReturn.size());
+				for (X2BaseBean bean : beansToReturn) {
+					beanOids.add(bean.getOid());
+				}
+				cache.put(cacheKey, beanOids);
 			}
-			cache.put(cacheKey, beanOids);
 
 			QueryIterator dashIter = new QueryIteratorDash(this, beansToReturn);
 			if (log.isLoggable(Level.INFO))
-				log.info("queried " + ctr + " iterations for " + request+": "+beanOids);
+				log.info("queried " + ctr + " iterations for " + request+": "+toString(beansToReturn));
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_MISS);
 		}
@@ -988,10 +999,14 @@ public class Dash {
 		int removedOperators = 0;
 		while (splitOpIter.hasNext()) {
 			Operator splitOperator = splitOpIter.next();
-			CacheKey splitKey = new CacheKey(splitOperator, request.orderBy,
-					request.beanQuery.isDistinct());
+			CacheKey splitKey = null;
+			List<String> splitOids = null;
+			if(cache != null) {
+				splitKey = new CacheKey(splitOperator, request.orderBy,
+						request.beanQuery.isDistinct());
+				splitOids = cache.get(splitKey);
+			}
 
-			List<String> splitOids = cache.get(splitKey);
 			if (splitOids != null) {
 				List<X2BaseBean> splitBeans = getBeansByOid(
 						request.beanQuery.getBaseClass(), splitOids);
@@ -1061,7 +1076,7 @@ public class Dash {
 		int ctr = 0;
 		int maxSize = getMaxOidListSize(removedOperators > 0, ourQuery);
 		while (iter.hasNext() && ctr < maxSize) {
-			ThreadUtils.checkInterrupt();
+			ThreadedBrokerIterator.checkInterruptNoYield();
 
 			X2BaseBean bean = (X2BaseBean) iter.next();
 			storeBean(bean);
@@ -1082,37 +1097,39 @@ public class Dash {
 		// we have all the beans; now we just have to stores things in our cache
 		// for next time
 
-		beanOids = new LinkedList<>();
-		for (X2BaseBean bean : knownBeans) {
-			beanOids.add(bean.getOid());
-		}
-		cache.put(cacheKey, beanOids);
-
-		if (isCachingSplitResults(request, knownBeans)) {
-			scanOps : for (Operator op : splitOperators) {
-				List<String> oids = new LinkedList<>();
-
-				for (X2BaseBean bean : knownBeans) {
-					try {
-						if (op.evaluate(Dash.CONTEXT, bean)) {
-							oids.add(bean.getOid());
+		if(cache!=null) {
+			beanOids = new ArrayList<>(knownBeans.size());
+			for (X2BaseBean bean : knownBeans) {
+				beanOids.add(bean.getOid());
+			}
+			cache.put(cacheKey, beanOids);
+		
+			if (isCachingSplitResults(request, knownBeans)) {
+				scanOps : for (Operator op : splitOperators) {
+					List<String> oids = new LinkedList<>();
+	
+					for (X2BaseBean bean : knownBeans) {
+						try {
+							if (op.evaluate(Dash.CONTEXT, bean)) {
+								oids.add(bean.getOid());
+							}
+						} catch (Exception e) {
+							UncaughtExceptionHandler ueh = getUncaughtExceptionHandler();
+							Exception e2 = new Exception(
+									"An error occurred evaluating \"" + op
+											+ "\" on \"" + bean + "\"", e);
+							ueh.uncaughtException(Thread.currentThread(), e2);
+							continue scanOps;
 						}
-					} catch (Exception e) {
-						UncaughtExceptionHandler ueh = getUncaughtExceptionHandler();
-						Exception e2 = new Exception(
-								"An error occurred evaluating \"" + op
-										+ "\" on \"" + bean + "\"", e);
-						ueh.uncaughtException(Thread.currentThread(), e2);
-						continue scanOps;
 					}
+	
+					CacheKey splitKey = new CacheKey(op, request.orderBy,
+							ourQuery.isDistinct());
+					cache.put(splitKey, oids);
+					if (log.isLoggable(Level.INFO))
+						log.info("identified " + oids.size()
+								+ " oids for split query \"" + op+"\": "+oids);
 				}
-
-				CacheKey splitKey = new CacheKey(op, request.orderBy,
-						ourQuery.isDistinct());
-				cache.put(splitKey, oids);
-				if (log.isLoggable(Level.INFO))
-					log.info("identified " + oids.size()
-							+ " oids for split query \"" + op+"\": "+oids);
 			}
 		}
 
@@ -1121,15 +1138,28 @@ public class Dash {
 			if (log.isLoggable(Level.INFO))
 				log.info("queried " + ctr + " iterations (with "
 						+ removedOperators + " cached split queries) for "
-						+ request+": "+beanOids);
+						+ request+": "+toString(knownBeans));
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_REDUCED_FROM_SPLIT);
 		} else {
 			if (log.isLoggable(Level.INFO))
-				log.info("queried " + ctr + " iterations for " + request+": "+beanOids);
+				log.info("queried " + ctr + " iterations for " + request+": "+toString(knownBeans));
 			return new AbstractMap.SimpleEntry<>(dashIter,
 					CacheResults.Type.QUERY_MISS);
 		}
+	}
+	
+	private static String toString(Collection<X2BaseBean> beans) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("[");
+		Iterator<X2BaseBean> iter = beans.iterator();
+		while(iter.hasNext()) {
+			if(sb.length()>1)
+				sb.append(", ");
+			sb.append(iter.next().getOid());
+		}
+		sb.append("]");
+		return sb.toString();
 	}
 
 	/**
@@ -1248,6 +1278,7 @@ public class Dash {
 	 * @param beanType the type of bean that was modified. If this is null
 	 * then this method immediately returns.
 	 */
+	@SuppressWarnings("rawtypes")
 	public void modifyBeanRecord(Class beanType) {
 		if(beanType==null)
 			return;
@@ -1265,6 +1296,7 @@ public class Dash {
 	/**
 	 * Clear all cached information related to a given bean type.
 	 */
+	@SuppressWarnings("rawtypes")
 	public void clearCache(Class beanType) {
 		if(beanType==null)
 			return;
@@ -1482,6 +1514,7 @@ public class Dash {
 	 * cached information related beans that may have been changed during this
 	 * rollback.
 	 */
+	@SuppressWarnings("rawtypes")
 	public void clearModifiedBeanTypes() {
 		Class[] z;
 		synchronized (modifiedBeanTypes) {
