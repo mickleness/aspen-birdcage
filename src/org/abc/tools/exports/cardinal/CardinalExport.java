@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.abc.tools.Tool;
 import org.abc.util.SqlResultHandler;
 
+import com.follett.fsc.core.k12.beans.DataFieldConfig;
 import com.follett.fsc.core.k12.beans.path.BeanColumnPath;
 import com.follett.fsc.core.k12.beans.path.BeanTablePath;
 import com.follett.fsc.core.k12.business.X2Broker;
@@ -179,6 +180,9 @@ public class CardinalExport extends ToolJavaSource {
             "  if(\"java-name\"===sortBy) {\n" +
             "    header = columnMap[columnID][0];\n" +
             "  }\n" +
+            "  if(\"udf-name\"===sortBy) {\n" +
+            "    header = columnMap[columnID][5];\n" +
+            "  }\n" +
             "\n" +
             "  column = prepareColumn(columnNumber, columnID, header);\n" +
             "  blurb = document.createElement('div');\n" +
@@ -187,26 +191,28 @@ public class CardinalExport extends ToolJavaSource {
             "                          \"<tr><td class='inspector-label'>Database Type:</td><td> &nbsp; \"+columnMap[columnID][3]+\"</td></tr>\"+\n" +
             "                          \"<tr><td class='inspector-label'>Database Length:</td><td> &nbsp; \"+columnMap[columnID][4]+\"</td></tr>\"+\n" +
             "                          \"<tr><td class='inspector-label'>Java Name:</td><td> &nbsp; \"+columnMap[columnID][0]+\"</td></tr>\"+\n" +
-            "                          \"<tr><td class='inspector-label'>Java Type:</td><td> &nbsp; \"+columnMap[columnID][2]+\"</td></tr>\";\n" +
-            "  if(columnMap[columnID][5].indexOf(\"enabled\") >= 0) {\n" +
+            "                          \"<tr><td class='inspector-label'>Java Type:</td><td> &nbsp; \"+columnMap[columnID][2]+\"</td></tr>\"+\n" +
+            "  						   \"<tr><td class='inspector-label'>Short Name:</td><td> &nbsp; \"+columnMap[columnID][5]+\"</td></tr>\"+\n" +
+            "  						   \"<tr><td class='inspector-label'>Long Name:</td><td> &nbsp; \"+columnMap[columnID][6]+\"</td></tr>\";\n" +
+            "  if(columnMap[columnID][7].indexOf(\"enabled\") >= 0) {\n" +
             "    tableHTML += \"<tr><td class='inspector-label'>Enabled:</td><td> &nbsp; true</td></tr>\";\n" +
             "  } else {\n" +
             "      tableHTML += \"<tr><td class='inspector-label'>Enabled:</td><td> &nbsp; false</td></tr>\";\n" +
             "  }\n" +
             "\n" +
-            "  if(columnMap[columnID][5].indexOf(\"required\") >= 0) {\n" +
+            "  if(columnMap[columnID][7].indexOf(\"required\") >= 0) {\n" +
             "    tableHTML += \"<tr><td class='inspector-label'>Required:</td><td> &nbsp; true</td></tr>\";\n" +
             "  } else {\n" +
             "      tableHTML += \"<tr><td class='inspector-label'>Required:</td><td> &nbsp; false</td></tr>\";\n" +
             "  }\n" +
             "\n" +
-            "  if(columnMap[columnID][5].indexOf(\"read-only\") >= 0) {\n" +
+            "  if(columnMap[columnID][7].indexOf(\"read-only\") >= 0) {\n" +
             "    tableHTML += \"<tr><td class='inspector-label'>Read Only:</td><td> &nbsp; true</td></tr>\";\n" +
             "  } else {\n" +
             "      tableHTML += \"<tr><td class='inspector-label'>Read Only:</td><td> &nbsp; false</td></tr>\";\n" +
             "  }\n" +
             "\n" +
-            "  if(columnMap[columnID][5].indexOf(\"system-use-only\") >= 0) {\n" +
+            "  if(columnMap[columnID][7].indexOf(\"system-use-only\") >= 0) {\n" +
             "    tableHTML += \"<tr><td class='inspector-label'>System Use Only:</td><td> &nbsp; true</td></tr>\";\n" +
             "  } else {\n" +
             "      tableHTML += \"<tr><td class='inspector-label'>System Use Only:</td><td> &nbsp; false</td></tr>\";\n" +
@@ -259,7 +265,7 @@ public class CardinalExport extends ToolJavaSource {
             "  tableID = getTableIDByPrefix(tablePrefix);\n" +
             "  if(\"model-property\"===sortBy) {\n" +
             "    headerText = tableMap[tableID][1];\n" +
-            "  } if(\"java-name\"===sortBy) {\n" +
+            "  } if(\"java-name\"===sortBy || \"udf-name\"===sortBy) {\n" +
             "    headerText = tableMap[tableID][2];\n" +
             "    headerText = headerText.substring(headerText.lastIndexOf(\".\")+1);\n" +
             "  }\n" +
@@ -281,7 +287,7 @@ public class CardinalExport extends ToolJavaSource {
             "\n" +
             "        if(\"model-property\"===sortBy) {\n" +
             "          text = relationship;\n" +
-            "        } if(\"java-name\"===sortBy) {\n" +
+            "        } if(\"java-name\"===sortBy || \"udf-name\"===sortBy) {\n" +
             "          text = relationshipMap[relationship][1];\n" +
             "        }\n" +
             "\n" +
@@ -320,12 +326,18 @@ public class CardinalExport extends ToolJavaSource {
             "\n" +
             "        if(\"model-property\"===sortBy) {\n" +
             "          text = column;\n" +
-            "        } if(\"java-name\"===sortBy) {\n" +
+            "        } else if(\"java-name\"===sortBy) {\n" +
             "          text = columnMap[column][0];\n" +
+            "        } else if(\"udf-name\"===sortBy) {\n" +
+            "			if(columnMap[column][5]) {\n"  +
+            "          text = columnMap[column][5];\n" +
+            "		   } else {\n"  +
+            "			text = columnMap[column][0];\n"  +
+            "			}\n"  +
             "        }\n" +
             "\n" +
             "        var action = \"javascript:selectColumn(\"+(columnNumber+1)+\", '\"+column+\"', '\"+li.id+\"', false)\";\n" +
-            "        var isEnabled = columnMap[column][5].indexOf('enabled') >= 0;\n" +
+            "        var isEnabled = columnMap[column][7].indexOf('enabled') >= 0;\n" +
             "\n" +
             "        var tooltip = columnMap[column][3]+\"<br>\"+columnMap[column][2]+\"<br>\";\n" +
             "        if(isEnabled) {\n" +
@@ -522,6 +534,7 @@ public class CardinalExport extends ToolJavaSource {
             "    <tr><td class=\"inspector-label\">Display:</td>\n" +
             "      <td style=\"padding: 5px;\">\n" +
             "     <select style=\"font-family: 'Open Sans', Arial, sans-serif;font-size: 18px;\" id=\"data-sort\" onchange=\"refreshFromModelProperty();\">\n" +
+            "      <option value=\"udf-name\">UDF/Java Name</option>\n" +
             "      <option value=\"model-property\">Model Property</option>\n" +
             "      <option value=\"java-name\">Java Name</option>\n" +
             "     </select></td>\n" +
@@ -650,15 +663,26 @@ public class CardinalExport extends ToolJavaSource {
 			ThreadUtils.checkInterrupt();
 			BeanColumnPath bcp = allColumns.get(a);
 			DataDictionaryField field = bcp.getField(getBroker().getPersistenceKey());
+
+			DataFieldConfig fdd = field.getDataFieldConfig();
+			String shortName = "";
+			String longName = "";
+			if(fdd != null)
+			{
+				shortName = field.getUserShortName().replace("'","");
+				longName = field.getUserLongName().replace("'","");
+			}
 			
 			StringBuilder sb = new StringBuilder();
 			sb.append(bcp.getColumnOid()+": [");
 			sb.append("'"+bcp.toString()+"',");
-			sb.append(" '"+bcp.getDatabaseName()+"', ");
+			sb.append("'"+bcp.getDatabaseName()+"',");
 			
-			sb.append(" '"+getSimpleName(field.getJavaType())+"', ");
-			sb.append(" '"+field.getJdbcType()+"', ");
-			sb.append(" '"+field.getDatabaseLength()+"', ");
+			sb.append("'"+getSimpleName(field.getJavaType())+"',");
+			sb.append("'"+field.getJdbcType()+"', ");
+			sb.append("'"+field.getDatabaseLength()+"',");
+			sb.append("'"+shortName+"',");
+			sb.append("'"+longName+"',");
 
 			StringBuilder flags = new StringBuilder();
 			if(field.isEnabled()) {
@@ -696,11 +720,11 @@ public class CardinalExport extends ToolJavaSource {
 			sb.append(relationshipOid+": ");
 			sb.append("['"+ddt.getDisplayString()+"', ");
 			
-			sb.append("'"+btp.getPath()+"', ");
-			sb.append("'"+btp.getPrimaryColumn()+"', ");
-			sb.append("'"+btp.getPrimaryIndex()+"', ");
-			sb.append("'"+btp.getRelatedIndex()+"', ");
-			sb.append("'"+btp.getRelationshipType()+"' ");
+			sb.append("'"+btp.getPath()+"',");
+			sb.append("'"+btp.getPrimaryColumn()+"',");
+			sb.append("'"+btp.getPrimaryIndex()+"',");
+			sb.append("'"+btp.getRelatedIndex()+"',");
+			sb.append("'"+btp.getRelationshipType()+"'");
 			sb.append("]");
 			if(a<allRelationships.size()-1)
 				sb.append(",");
