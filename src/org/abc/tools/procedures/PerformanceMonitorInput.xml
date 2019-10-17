@@ -1,0 +1,6 @@
+ <tool-input>
+      <input name="minutes" data-type="integer"  display-type="text" display-name="Minutes To Run" required="true" default-value="2" />
+      <input name="appServer" data-type="boolean" display-type="checkbox" display-name="Run on Application Server" default-value="false" />
+      <input name="writeToolMessages" data-type="boolean" display-type="checkbox" display-name="Save Results as Tool Messages" default-value="false" />
+      <input name="onlyMonitorTools" data-type="boolean" display-type="checkbox" display-name="Only Monitor Tools" default-value="true" />
+ </tool-input>
