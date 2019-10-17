@@ -215,6 +215,7 @@ public class XrayExport extends ToolJavaSource {
 
 		// utils
 		sourceCodeManager.addClasses(com.x2dev.utils.Base64.class);
+		sourceCodeManager.addClasses(com.follett.fsc.core.k12.web.WebUtils.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.utils.converters.ConverterFactory.class);
 		sourceCodeManager.addClasses(com.lowagie.text.pdf.codec.Base64.class);
@@ -245,6 +246,8 @@ public class XrayExport extends ToolJavaSource {
 		sourceCodeManager.addClasses(com.x2dev.utils.NumberUtils.class);
 		sourceCodeManager
 				.addClasses(org.apache.commons.lang.time.DateUtils.class);
+		sourceCodeManager
+		.addClasses(com.follett.fsc.core.k12.business.localization.LocalizationResourceBundle.class);
 
 		// constants
 		sourceCodeManager
