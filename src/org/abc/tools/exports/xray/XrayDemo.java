@@ -11,7 +11,10 @@
 package org.abc.tools.exports.xray;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.util.jar.JarEntry;
+import java.util.jar.JarInputStream;
 
 import com.pump.desktop.temp.TempFileManager;
 import com.pump.io.FileTreeIterator;
@@ -58,6 +61,17 @@ public class XrayDemo {
 		try (FileOutputStream out = new FileOutputStream(jarFile)) {
 			jarBuilder.write(out);
 		}
+
+		try (FileInputStream fileIn = new FileInputStream(jarFile)) {
+			try (JarInputStream jarIn = new JarInputStream(fileIn)) {
+				JarEntry e = jarIn.getNextJarEntry();
+				while (e != null) {
+					System.out.println(e.getName());
+					e = jarIn.getNextJarEntry();
+				}
+			}
+		}
+
 		System.out.println("Wrote " + jarFile.getAbsolutePath());
 	}
 }
