@@ -101,7 +101,7 @@ import net.sf.jasperreports.engine.JRException;
  * Then the grid will be returned to the main report to function as normal.
  */
 public class DocumentManager {
-	
+
 	/**
 	 * This ExecutorService processes tasks immediately; it does not use any
 	 * other threads.
@@ -275,6 +275,20 @@ public class DocumentManager {
 			// we can't know if we run past the time limit until
 			// we've processed a task, so the time limit is useless.
 			return invokeAny(tasks);
+		}
+	}
+
+	/**
+	 * This ThreadPoolSubreportRunnerFactory uses a InlineExecutorService to
+	 * avoid multithreading.
+	 *
+	 */
+	public static class InlineThreadPoolSubreportRunnerFactory extends
+			net.sf.jasperreports5.engine.fill.ThreadPoolSubreportRunnerFactory {
+		@Override
+		protected java.util.concurrent.ExecutorService createThreadExecutor(
+				net.sf.jasperreports5.engine.fill.JRFillContext fillContext) {
+			return new InlineExecutorService();
 		}
 	}
 
@@ -641,8 +655,13 @@ public class DocumentManager {
 			version = Integer.valueOf(engine.substring(0, 1));
 		try {
 			if (version == 5) {
+				net.sf.jasperreports5.engine.JasperReport jasperReport = (net.sf.jasperreports5.engine.JasperReport) net.sf.jasperreports5.engine.util.JRLoader
+						.loadObject(format);
+				jasperReport.setProperty(
+						"net.sf.jasperreports.subreport.runner.factory",
+						InlineThreadPoolSubreportRunnerFactory.class.getName());
 				return net.sf.jasperreports5.engine.JasperFillManager
-						.fillReport(format, params, reportData);
+						.fillReport(jasperReport, params, reportData);
 			} else if (version == 3) {
 				return net.sf.jasperreports3.engine.JasperFillManager
 						.fillReport(format, params, reportData);
