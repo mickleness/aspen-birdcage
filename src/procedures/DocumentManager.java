@@ -19,8 +19,16 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 
 import org.apache.commons.lang3.StringUtils;
@@ -93,6 +101,183 @@ import net.sf.jasperreports.engine.JRException;
  * Then the grid will be returned to the main report to function as normal.
  */
 public class DocumentManager {
+	
+	/**
+	 * This ExecutorService processes tasks immediately; it does not use any
+	 * other threads.
+	 */
+	public static class InlineExecutorService implements ExecutorService {
+		static class SimpleFuture<T> implements Future<T> {
+
+			T value;
+			Throwable throwable;
+
+			public SimpleFuture(T value) {
+				this.value = value;
+			}
+
+			public SimpleFuture(Throwable throwable) {
+				this.throwable = throwable;
+			}
+
+			@Override
+			public boolean cancel(boolean mayInterruptIfRunning) {
+				return false;
+			}
+
+			@Override
+			public boolean isCancelled() {
+				return false;
+			}
+
+			@Override
+			public boolean isDone() {
+				return true;
+			}
+
+			@Override
+			public T get() throws InterruptedException, ExecutionException {
+				if (throwable != null)
+					throw new ExecutionException("", throwable);
+				return value;
+			}
+
+			@Override
+			public T get(long timeout, TimeUnit unit)
+					throws InterruptedException, ExecutionException,
+					TimeoutException {
+				return get();
+			}
+
+		}
+
+		boolean shutdown = false;
+		boolean terminated = false;
+
+		@Override
+		public void execute(Runnable command) {
+			if (isShutdown())
+				throw new RejectedExecutionException();
+			if (command != null)
+				command.run();
+		}
+
+		@Override
+		public void shutdown() {
+			shutdown = true;
+		}
+
+		@Override
+		public List<Runnable> shutdownNow() {
+			shutdown = true;
+			return new LinkedList<>();
+		}
+
+		@Override
+		public boolean isShutdown() {
+			return shutdown;
+		}
+
+		@Override
+		public boolean isTerminated() {
+			return terminated;
+		}
+
+		@Override
+		public boolean awaitTermination(long timeout, TimeUnit unit)
+				throws InterruptedException {
+			return true;
+		}
+
+		@Override
+		public <T> Future<T> submit(Callable<T> task) {
+			T result;
+			try {
+				result = task.call();
+				return new SimpleFuture<T>(result);
+			} catch (Exception e) {
+				return new SimpleFuture<T>(e);
+			}
+		}
+
+		@Override
+		public <T> Future<T> submit(Runnable task, T result) {
+			task.run();
+			return new SimpleFuture<T>(result);
+		}
+
+		@Override
+		public Future<?> submit(Runnable task) {
+			return submit(task, null);
+		}
+
+		@Override
+		public <T> List<Future<T>> invokeAll(
+				Collection<? extends Callable<T>> tasks)
+				throws InterruptedException {
+			List<Future<T>> returnValue = new ArrayList<>();
+			for (Callable<T> c : tasks) {
+				try {
+					T result = c.call();
+					returnValue.add(new SimpleFuture<>(result));
+				} catch (Exception e) {
+					returnValue.add(new SimpleFuture<T>(e));
+				}
+			}
+			return returnValue;
+		}
+
+		@Override
+		public <T> List<Future<T>> invokeAll(
+				Collection<? extends Callable<T>> tasks, long timeout,
+				TimeUnit unit) throws InterruptedException {
+			long maxMillis = TimeUnit.MILLISECONDS.convert(timeout, unit);
+			long startTime = System.currentTimeMillis();
+			List<Future<T>> returnValue = new ArrayList<>();
+			for (Callable<T> c : tasks) {
+				long elapsed = System.currentTimeMillis() - startTime;
+				try {
+					if (elapsed > maxMillis)
+						throw new TimeoutException("invokeAll timeout after "
+								+ timeout + " " + unit + "(s)");
+					T result = c.call();
+					returnValue.add(new SimpleFuture<>(result));
+				} catch (Exception e) {
+					returnValue.add(new SimpleFuture<T>(e));
+				}
+			}
+			return returnValue;
+		}
+
+		@Override
+		public <T> T invokeAny(Collection<? extends Callable<T>> tasks)
+				throws InterruptedException, ExecutionException {
+			if (tasks.isEmpty())
+				throw new IllegalArgumentException();
+			Iterator<? extends Callable<T>> iter = tasks.iterator();
+			try {
+				return iter.next().call();
+			} catch (Exception e) {
+				throw new ExecutionException(e);
+			} finally {
+				// I'm unclear from the documentation if we're supposed to purge
+				// this?
+				while (iter.hasNext()) {
+					iter.next();
+				}
+			}
+		}
+
+		@Override
+		public <T> T invokeAny(Collection<? extends Callable<T>> tasks,
+				long timeout, TimeUnit unit) throws InterruptedException,
+				ExecutionException, TimeoutException {
+			// we can't know if we run past the time limit until
+			// we've processed a task, so the time limit is useless.
+			return invokeAny(tasks);
+		}
+	}
+
 	protected static final int MAX_DEPTH = 4;
 
 	protected static final String LOG_LABEL = "DOCUMENT MANAGER: ";
