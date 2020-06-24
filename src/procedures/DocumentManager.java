@@ -657,11 +657,16 @@ public class DocumentManager {
 			if (version == 5) {
 				net.sf.jasperreports5.engine.JasperReport jasperReport = (net.sf.jasperreports5.engine.JasperReport) net.sf.jasperreports5.engine.util.JRLoader
 						.loadObject(format);
-				jasperReport.setProperty(
+				net.sf.jasperreports5.engine.DefaultJasperReportsContext defaultCtx = net.sf.jasperreports5.engine.DefaultJasperReportsContext
+						.getInstance();
+				net.sf.jasperreports5.engine.SimpleJasperReportsContext context = new net.sf.jasperreports5.engine.SimpleJasperReportsContext(
+						defaultCtx);
+				context.setValue(
 						"net.sf.jasperreports.subreport.runner.factory",
 						InlineThreadPoolSubreportRunnerFactory.class.getName());
-				return net.sf.jasperreports5.engine.JasperFillManager
-						.fillReport(jasperReport, params, reportData);
+				net.sf.jasperreports5.engine.JasperFillManager manager = net.sf.jasperreports5.engine.JasperFillManager
+						.getInstance(context);
+				return manager.fill(jasperReport, params, reportData);
 			} else if (version == 3) {
 				return net.sf.jasperreports3.engine.JasperFillManager
 						.fillReport(format, params, reportData);
