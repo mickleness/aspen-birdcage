@@ -655,18 +655,37 @@ public class DocumentManager {
 			version = Integer.valueOf(engine.substring(0, 1));
 		try {
 			if (version == 5) {
-				net.sf.jasperreports5.engine.JasperReport jasperReport = (net.sf.jasperreports5.engine.JasperReport) net.sf.jasperreports5.engine.util.JRLoader
-						.loadObject(format);
-				net.sf.jasperreports5.engine.DefaultJasperReportsContext defaultCtx = net.sf.jasperreports5.engine.DefaultJasperReportsContext
-						.getInstance();
-				net.sf.jasperreports5.engine.SimpleJasperReportsContext context = new net.sf.jasperreports5.engine.SimpleJasperReportsContext(
-						defaultCtx);
-				context.setValue(
-						"net.sf.jasperreports.subreport.runner.factory",
-						InlineThreadPoolSubreportRunnerFactory.class.getName());
-				net.sf.jasperreports5.engine.JasperFillManager manager = net.sf.jasperreports5.engine.JasperFillManager
-						.getInstance(context);
-				return manager.fill(jasperReport, params, reportData);
+				try {
+					net.sf.jasperreports5.engine.JasperReport jasperReport = (net.sf.jasperreports5.engine.JasperReport) net.sf.jasperreports5.engine.util.JRLoader
+							.loadObject(format);
+					net.sf.jasperreports5.engine.DefaultJasperReportsContext defaultCtx = net.sf.jasperreports5.engine.DefaultJasperReportsContext
+							.getInstance();
+					net.sf.jasperreports5.engine.SimpleJasperReportsContext context = new net.sf.jasperreports5.engine.SimpleJasperReportsContext(
+							defaultCtx);
+
+					context.setValue(
+							net.sf.jasperreports5.engine.fill.JRSubreportRunnerFactory.SUBREPORT_RUNNER_FACTORY,
+							InlineThreadPoolSubreportRunnerFactory.class
+									.getName());
+
+					net.sf.jasperreports5.engine.fill.ReportFiller filler = net.sf.jasperreports5.engine.fill.JRFiller
+							.createReportFiller(context, jasperReport);
+					net.sf.jasperreports5.engine.fill.JRFillContext fillCtx = filler
+							.getFillContext();
+					net.sf.jasperreports5.engine.fill.BaseReportFiller baseReportFiller = fillCtx
+							.getMasterFiller();
+					net.sf.jasperreports5.engine.JRPropertiesUtil props = baseReportFiller
+							.getPropertiesUtil();
+
+					props.setProperty(
+							net.sf.jasperreports5.engine.fill.JRSubreportRunnerFactory.SUBREPORT_RUNNER_FACTORY,
+							InlineThreadPoolSubreportRunnerFactory.class
+									.getName());
+
+					return filler.fill(params, reportData);
+				} catch (Exception e) {
+					throw new RuntimeException(e);
+				}
 			} else if (version == 3) {
 				return net.sf.jasperreports3.engine.JasperFillManager
 						.fillReport(format, params, reportData);
