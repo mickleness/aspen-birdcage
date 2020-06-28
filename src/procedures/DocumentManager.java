@@ -655,42 +655,40 @@ public class DocumentManager {
 			version = Integer.valueOf(engine.substring(0, 1));
 		try {
 			if (version == 5) {
-				try {
-					net.sf.jasperreports5.engine.JasperReport jasperReport = (net.sf.jasperreports5.engine.JasperReport) net.sf.jasperreports5.engine.util.JRLoader
-							.loadObject(format);
-					net.sf.jasperreports5.engine.DefaultJasperReportsContext defaultCtx = net.sf.jasperreports5.engine.DefaultJasperReportsContext
-							.getInstance();
-					net.sf.jasperreports5.engine.SimpleJasperReportsContext context = new net.sf.jasperreports5.engine.SimpleJasperReportsContext(
-							defaultCtx);
+				net.sf.jasperreports5.engine.JasperReport jasperReport = (net.sf.jasperreports5.engine.JasperReport) net.sf.jasperreports5.engine.util.JRLoader
+						.loadObject(format);
 
-					context.setValue(
-							net.sf.jasperreports5.engine.fill.JRSubreportRunnerFactory.SUBREPORT_RUNNER_FACTORY,
-							InlineThreadPoolSubreportRunnerFactory.class
-									.getName());
+				jasperReport.setProperty(
+						net.sf.jasperreports5.engine.fill.JRSubreportRunnerFactory.SUBREPORT_RUNNER_FACTORY,
+						InlineThreadPoolSubreportRunnerFactory.class.getName());
 
-					net.sf.jasperreports5.engine.fill.ReportFiller filler = net.sf.jasperreports5.engine.fill.JRFiller
-							.createReportFiller(context, jasperReport);
-					net.sf.jasperreports5.engine.fill.JRFillContext fillCtx = filler
-							.getFillContext();
-					net.sf.jasperreports5.engine.fill.BaseReportFiller baseReportFiller = fillCtx
-							.getMasterFiller();
-					net.sf.jasperreports5.engine.JRPropertiesUtil props = baseReportFiller
-							.getPropertiesUtil();
+				net.sf.jasperreports5.engine.DefaultJasperReportsContext defaultCtx = net.sf.jasperreports5.engine.DefaultJasperReportsContext
+						.getInstance();
+				net.sf.jasperreports5.engine.SimpleJasperReportsContext context = new net.sf.jasperreports5.engine.SimpleJasperReportsContext(
+						defaultCtx);
 
-					props.setProperty(
-							net.sf.jasperreports5.engine.fill.JRSubreportRunnerFactory.SUBREPORT_RUNNER_FACTORY,
-							InlineThreadPoolSubreportRunnerFactory.class
-									.getName());
+				net.sf.jasperreports5.engine.fill.JRBaseFiller filler = net.sf.jasperreports5.engine.fill.JRFiller
+						.createFiller(context, jasperReport);
+				net.sf.jasperreports5.engine.JRPropertiesUtil props = filler
+						.getPropertiesUtil();
+				props.setProperty(
+						net.sf.jasperreports5.engine.fill.JRSubreportRunnerFactory.SUBREPORT_RUNNER_FACTORY,
+						InlineThreadPoolSubreportRunnerFactory.class.getName());
 
-					return filler.fill(params, reportData);
-				} catch (Exception e) {
-					throw new RuntimeException(e);
-				}
+				// not sure if "master" would be different, but just in case:
+				net.sf.jasperreports5.engine.fill.JRBaseFiller masterFiller = filler
+						.getMasterFiller();
+				props = masterFiller.getPropertiesUtil();
+				props.setProperty(
+						net.sf.jasperreports5.engine.fill.JRSubreportRunnerFactory.SUBREPORT_RUNNER_FACTORY,
+						InlineThreadPoolSubreportRunnerFactory.class.getName());
+
+				return filler.fill(params, reportData);
 			} else if (version == 3) {
 				return net.sf.jasperreports3.engine.JasperFillManager
 						.fillReport(format, params, reportData);
 			} else if (version == 1) {
-				return net.sf.jasperreports.engine.JasperFillManager
+				return net.sf.jasperreports5.engine.JasperFillManager
 						.fillReport(format, params, reportData);
 			}
 		} catch (Exception e) {
@@ -724,10 +722,10 @@ public class DocumentManager {
 		ByteArrayOutputStream pdfStream = new ByteArrayOutputStream();
 
 		Object report = createJasperReport(format, params, reportData);
-		if (report instanceof net.sf.jasperreports.engine.JasperPrint) {
-			net.sf.jasperreports.engine.JasperExportManager
+		if (report instanceof net.sf.jasperreports5.engine.JasperPrint) {
+			net.sf.jasperreports5.engine.JasperExportManager
 					.exportReportToPdfStream(
-							(net.sf.jasperreports.engine.JasperPrint) report,
+							(net.sf.jasperreports5.engine.JasperPrint) report,
 							pdfStream);
 		} else if (report instanceof net.sf.jasperreports3.engine.JasperPrint) {
 			net.sf.jasperreports3.engine.JasperExportManager
