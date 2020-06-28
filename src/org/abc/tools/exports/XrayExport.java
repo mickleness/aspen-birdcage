@@ -125,30 +125,12 @@ public class XrayExport extends ToolJavaSource {
 		sourceCodeManager.addClasses(
 				net.sf.jasperreports5.renderers.JFreeChartRenderer.class);
 
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports.engine.fill.ThreadPoolSubreportRunnerFactory.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports3.engine.fill.ThreadPoolSubreportRunnerFactory.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports5.engine.fill.ThreadPoolSubreportRunnerFactory.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports.engine.util.JRLoader.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports3.engine.util.JRLoader.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports5.engine.util.JRLoader.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports.engine.DefaultJasperReportsContext.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports3.engine.DefaultJasperReportsContext.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports5.engine.DefaultJasperReportsContext.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports.engine.SimpleJasperReportsContext.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports3.engine.SimpleJasperReportsContext.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports5.engine.SimpleJasperReportsContext.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports.engine.fill.JRFiller.class);
 		sourceCodeManager
@@ -156,29 +138,11 @@ public class XrayExport extends ToolJavaSource {
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports5.engine.fill.JRFiller.class);
 		sourceCodeManager.addClasses(
-				net.sf.jasperreports.engine.fill.ReportFiller.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports3.engine.fill.ReportFiller.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports5.engine.fill.ReportFiller.class);
-		sourceCodeManager.addClasses(
 				net.sf.jasperreports.engine.fill.JRFillContext.class);
 		sourceCodeManager.addClasses(
 				net.sf.jasperreports3.engine.fill.JRFillContext.class);
 		sourceCodeManager.addClasses(
 				net.sf.jasperreports5.engine.fill.JRFillContext.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports.engine.fill.BaseReportFiller.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports3.engine.fill.BaseReportFiller.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports5.engine.fill.BaseReportFiller.class);
-		sourceCodeManager
-				.addClasses(net.sf.jasperreports.engine.JRPropertiesUtil.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports3.engine.JRPropertiesUtil.class);
-		sourceCodeManager.addClasses(
-				net.sf.jasperreports5.engine.JRPropertiesUtil.class);
 		sourceCodeManager.addClasses(
 				net.sf.jasperreports.engine.JasperFillManager.class);
 		sourceCodeManager.addClasses(
