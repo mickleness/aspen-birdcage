@@ -1962,7 +1962,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 		m_stdPsnLastName = SisBeanPaths.STUDENT.person().lastName();
 		m_stdPsnMiddleName = SisBeanPaths.STUDENT.person().middleName();
 		m_stdPsnFirstName = SisBeanPaths.STUDENT.person().firstName();
-		m_stdPsnPhone = SisBeanPaths.STUDENT.person().phone01();
+		m_stdPsnPhone = SisBeanPaths.STUDENT.person().phone02();
 		m_stdPsnUsrLogin = SisBeanPaths.STUDENT.person().user().loginName();
 		m_stdLocalId = SisBeanPaths.STUDENT.localId();
 		m_stdStateId = SisBeanPaths.STUDENT.stateId();
