@@ -679,7 +679,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 	private BeanColumnPath m_stdPsnLastName;
 	private BeanColumnPath m_stdPsnMiddleName;
 	private BeanColumnPath m_stdPsnFirstName;
-	private BeanColumnPath m_stdPsnPhone;
+	private BeanColumnPath m_stdPsnPhone01;
+	private BeanColumnPath m_stdPsnPhone02;
 	private BeanColumnPath m_stdPsnUsrLogin;
 	private BeanColumnPath m_stdLocalId;
 	private BeanColumnPath m_stdStateId;
@@ -695,7 +696,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 	private BeanColumnPath m_ctjPsnLastName;
 	private BeanColumnPath m_ctjPsnMiddleName;
 	private BeanColumnPath m_ctjPsnFirstName;
-	private BeanColumnPath m_ctjPsnPhone;
+	private BeanColumnPath m_ctjPsnPhone01;
+	private BeanColumnPath m_ctjPsnPhone02;
 	private BeanColumnPath m_ctjPsnDob;
 	private BeanColumnPath m_ctjPsnGenderCode;
 	private BeanColumnPath m_ctjPsnUsrLogin;
@@ -1533,7 +1535,10 @@ public class OneRosterExport_1_1 extends ExportArbor {
 								.getValue(m_stdPsnFirstName);
 						String identifier = (String) result
 								.getValue(m_stdLocalId);
-						String phone = (String) result.getValue(m_stdPsnPhone);
+						String phone01 = (String) result
+								.getValue(m_stdPsnPhone01);
+						String phone02 = (String) result
+								.getValue(m_stdPsnPhone02);
 						String username = (String) result
 								.getValue(m_stdPsnUsrLogin);
 						String stdSchoolOid = (String) result
@@ -1560,7 +1565,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 						user.setMiddleName(middleName);
 						user.setGivenName(givenName);
 						user.setIdentifier(identifier);
-						user.setPhone(phone);
+						user.setPhone(phone01);
+						setCustomValue(user, "Cell Phone", phone02);
 						user.setRole(RoleType.STUDENT);
 						user.setUsername(username);
 
@@ -1589,8 +1595,10 @@ public class OneRosterExport_1_1 extends ExportArbor {
 											.getValue(m_ctjPsnFirstName);
 									identifier = (String) contact
 											.getValue(m_ctjRelationship);
-									phone = (String) contact
-											.getValue(m_ctjPsnPhone);
+									phone01 = (String) contact
+											.getValue(m_ctjPsnPhone01);
+									phone02 = (String) contact
+											.getValue(m_ctjPsnPhone02);
 									username = (String) contact
 											.getValue(m_ctjPsnUsrLogin);
 
@@ -1603,7 +1611,9 @@ public class OneRosterExport_1_1 extends ExportArbor {
 									contactUser.setFamilyName(familyName);
 									contactUser.setGivenName(givenName);
 									contactUser.setIdentifier(identifier);
-									contactUser.setPhone(phone);
+									contactUser.setPhone(phone01);
+									setCustomValue(contactUser, "Cell Phone",
+											phone02);
 									RoleType contactRole = getRole(contactUser,
 											User.FIELD_ROLE, identifier);
 									contactUser.setRole(contactRole);
@@ -1678,6 +1688,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 			builder.addColumn(SisBeanPaths.STAFF.person().middleName());
 			builder.addColumn(SisBeanPaths.STAFF.person().firstName());
 			builder.addColumn(SisBeanPaths.STAFF.person().phone01());
+			builder.addColumn(SisBeanPaths.STAFF.person().phone02());
 			builder.addColumn(SisBeanPaths.STAFF.person().dob());
 			builder.addColumn(SisBeanPaths.STAFF.person().genderCode());
 			builder.addColumn(SisBeanPaths.STAFF.person().user().loginName());
@@ -1713,8 +1724,10 @@ public class OneRosterExport_1_1 extends ExportArbor {
 								SisBeanPaths.STAFF.person().firstName());
 						String identifier = (String) result
 								.getValue(SisBeanPaths.STAFF.localId());
-						String phone = (String) result.getValue(
+						String phone01 = (String) result.getValue(
 								SisBeanPaths.STAFF.person().phone01());
+						String phone02 = (String) result.getValue(
+								SisBeanPaths.STAFF.person().phone02());
 						String username = (String) result.getValue(
 								SisBeanPaths.STAFF.person().user().loginName());
 						String stfSchoolOid = (String) result
@@ -1731,7 +1744,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 						user.setMiddleName(middleName);
 						user.setGivenName(givenName);
 						user.setIdentifier(identifier);
-						user.setPhone(phone);
+						user.setPhone(phone01);
+						setCustomValue(user, "Cell Phone", phone02);
 
 						if (role == null) {
 							// assume if we haven't flagged a staff as anything
@@ -1774,6 +1788,31 @@ public class OneRosterExport_1_1 extends ExportArbor {
 	}
 
 	/**
+	 * This adds a custom value to a OneRosterBean.
+	 * <p>
+	 * This means your output may produce non-standard results. For example:
+	 * this was originally used to add a "Cell Phone" field to the user's table.
+	 * But since "Cell Phone" isn't part of the One Roster specification: this
+	 * information may not be parsed whoever is reading this export. In fact
+	 * some 3rd parties, depending on how strict they are, might identify extra
+	 * information as an error and reject the entire row/table.
+	 */
+	private void setCustomValue(OneRosterBean bean, String valueName,
+			String value) {
+		java.lang.reflect.Field fieldMapField;
+		try {
+			fieldMapField = OneRosterBean.class.getDeclaredField("fieldMap");
+			fieldMapField.setAccessible(true);
+			Map<Field, Object> map = (Map<Field, Object>) fieldMapField
+					.get(bean);
+			map.put(new Field(valueName), value);
+		} catch (NoSuchFieldException | SecurityException
+				| IllegalArgumentException | IllegalAccessException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	/**
 	 *  * Return a collection of columns to retrieve from the STUDENT table,
 	 * including  * "student.contacts.*" paths to enumerate contacts.  *
 	 *  * @return a collection of columns to retrieve from the STUDENT table.  
@@ -1781,12 +1820,13 @@ public class OneRosterExport_1_1 extends ExportArbor {
 	protected Collection<BeanColumnPath> getStudentAndContactsColumns() {
 		return new ArrayList<>(Arrays.asList(m_stdOid, m_stdNameView,
 				m_stdPsnEmail, m_stdPsnLastName, m_stdPsnMiddleName,
-				m_stdPsnFirstName, m_stdPsnPhone, m_stdPsnUsrLogin, m_stdPsnDob,
-				m_stdPsnGenderCode, m_stdLocalId, m_stdStateId, m_stdSklOid,
-				m_stdGradeLevel, m_stdEnrStatus, m_ctjOid, m_ctjRelationship,
-				m_ctjPsnEmail, m_ctjPsnLastName, m_ctjPsnDob,
-				m_ctjPsnGenderCode, m_ctjPsnMiddleName, m_ctjPsnFirstName,
-				m_ctjPsnPhone, m_ctjPsnUsrLogin));
+				m_stdPsnFirstName, m_stdPsnPhone01, m_stdPsnPhone02,
+				m_stdPsnUsrLogin, m_stdPsnDob, m_stdPsnGenderCode, m_stdLocalId,
+				m_stdStateId, m_stdSklOid, m_stdGradeLevel, m_stdEnrStatus,
+				m_ctjOid, m_ctjRelationship, m_ctjPsnEmail, m_ctjPsnLastName,
+				m_ctjPsnDob, m_ctjPsnGenderCode, m_ctjPsnMiddleName,
+				m_ctjPsnFirstName, m_ctjPsnPhone01, m_ctjPsnPhone02,
+				m_ctjPsnUsrLogin));
 	}
 
 	@Override
@@ -1962,7 +2002,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 		m_stdPsnLastName = SisBeanPaths.STUDENT.person().lastName();
 		m_stdPsnMiddleName = SisBeanPaths.STUDENT.person().middleName();
 		m_stdPsnFirstName = SisBeanPaths.STUDENT.person().firstName();
-		m_stdPsnPhone = SisBeanPaths.STUDENT.person().phone02();
+		m_stdPsnPhone01 = SisBeanPaths.STUDENT.person().phone01();
+		m_stdPsnPhone02 = SisBeanPaths.STUDENT.person().phone02();
 		m_stdPsnUsrLogin = SisBeanPaths.STUDENT.person().user().loginName();
 		m_stdLocalId = SisBeanPaths.STUDENT.localId();
 		m_stdStateId = SisBeanPaths.STUDENT.stateId();
@@ -1985,8 +2026,10 @@ public class OneRosterExport_1_1 extends ExportArbor {
 		m_ctjPsnDob = SisBeanPaths.STUDENT.contacts().contact().person().dob();
 		m_ctjPsnGenderCode = SisBeanPaths.STUDENT.contacts().contact().person()
 				.genderCode();
-		m_ctjPsnPhone = SisBeanPaths.STUDENT.contacts().contact().person()
+		m_ctjPsnPhone01 = SisBeanPaths.STUDENT.contacts().contact().person()
 				.phone01();
+		m_ctjPsnPhone02 = SisBeanPaths.STUDENT.contacts().contact().person()
+				.phone02();
 		m_ctjPsnUsrLogin = SisBeanPaths.STUDENT.contacts().contact().person()
 				.user().loginName();
 
