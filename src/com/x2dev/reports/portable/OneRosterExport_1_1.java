@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -127,6 +128,55 @@ import com.x2dev.utils.types.PlainDate;
  *  *  * @author Follett School Solutions  
  */
 public class OneRosterExport_1_1 extends ExportArbor {
+
+	public static final Field<String> FIELD_CELL_PHONE = new Field<>(
+			"Cell Phone");
+
+	interface CustomizedBean {
+		<T> T getCustomField(Field<T> field);
+
+		<T> T setCustomField(Field<T> field, T newValue);
+	}
+
+	static class CustomizedUser extends User implements CustomizedBean {
+		private static final long serialVersionUID = 1L;
+
+		public CustomizedUser(String uid) {
+			super(uid);
+		}
+
+		@Override
+		public <T> T getCustomField(Field<T> field) {
+			return field.get(fieldMap);
+		}
+
+		@Override
+		public <T> T setCustomField(Field<T> field, T newValue) {
+			if (newValue != null
+					&& !getBeanType().getFields().containsKey(field)) {
+				getBeanType().addField(field);
+			}
+			return field.put(this, newValue);
+		}
+
+		@Override
+		public LinkedHashMap<String, Object> getMap() {
+			// reorder fields so the CELL_PHONE field goes after the normal
+			// phone field
+			List<Field<?>> orderedFields = new LinkedList<>(
+					getBeanType().getFields().values());
+			orderedFields.remove(FIELD_CELL_PHONE);
+
+			int i = orderedFields.indexOf(FIELD_PHONE);
+			orderedFields.add(i, FIELD_CELL_PHONE);
+
+			LinkedHashMap<String, Object> map = new LinkedHashMap<>();
+			for (Field f : orderedFields) {
+				map.put(f.toString(), fieldMap.get(f));
+			}
+			return map;
+		}
+	}
 
 	/**
 	 *  * This exception is thrown when we create too many beans and we want to
@@ -1554,7 +1604,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 						String uid = createUid(studentOid,
 								(String) result.getValue(m_stdLocalId),
 								(String) result.getValue(m_stdStateId));
-						User user = new User(uid);
+						CustomizedUser user = new CustomizedUser(uid);
 
 						if (grade != null) {
 							user.setGrades(asList(grade));
@@ -1566,7 +1616,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 						user.setGivenName(givenName);
 						user.setIdentifier(identifier);
 						user.setPhone(phone01);
-						setCustomValue(user, "Cell Phone", phone02);
+						user.setCustomField(FIELD_CELL_PHONE, phone02);
 						user.setRole(RoleType.STUDENT);
 						user.setUsername(username);
 
@@ -1604,7 +1654,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 
 									String contactUid = createUid(contactOid,
 											null, null);
-									User contactUser = new User(contactUid);
+									CustomizedUser contactUser = new CustomizedUser(
+											contactUid);
 
 									contactUser.setEnabledUser(enabledUser);
 									contactUser.setEmail(email);
@@ -1612,7 +1663,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 									contactUser.setGivenName(givenName);
 									contactUser.setIdentifier(identifier);
 									contactUser.setPhone(phone01);
-									setCustomValue(contactUser, "Cell Phone",
+									contactUser.setCustomField(FIELD_CELL_PHONE,
 											phone02);
 									RoleType contactRole = getRole(contactUser,
 											User.FIELD_ROLE, identifier);
@@ -1712,7 +1763,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 										.getValue(SisBeanPaths.STAFF.localId()),
 								(String) result.getValue(
 										SisBeanPaths.STAFF.stateId()));
-						User user = new User(uid);
+						CustomizedUser user = new CustomizedUser(uid);
 
 						String email = (String) result.getValue(
 								SisBeanPaths.STAFF.person().email01());
@@ -1745,7 +1796,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 						user.setGivenName(givenName);
 						user.setIdentifier(identifier);
 						user.setPhone(phone01);
-						setCustomValue(user, "Cell Phone", phone02);
+						user.setCustomField(FIELD_CELL_PHONE, phone02);
 
 						if (role == null) {
 							// assume if we haven't flagged a staff as anything
@@ -1785,31 +1836,6 @@ public class OneRosterExport_1_1 extends ExportArbor {
 		}
 
 		return ctr;
-	}
-
-	/**
-	 * This adds a custom value to a OneRosterBean.
-	 * <p>
-	 * This means your output may produce non-standard results. For example:
-	 * this was originally used to add a "Cell Phone" field to the user's table.
-	 * But since "Cell Phone" isn't part of the One Roster specification: this
-	 * information may not be parsed whoever is reading this export. In fact
-	 * some 3rd parties, depending on how strict they are, might identify extra
-	 * information as an error and reject the entire row/table.
-	 */
-	private void setCustomValue(OneRosterBean bean, String valueName,
-			String value) {
-		java.lang.reflect.Field fieldMapField;
-		try {
-			fieldMapField = OneRosterBean.class.getDeclaredField("fieldMap");
-			fieldMapField.setAccessible(true);
-			Map<Field, Object> map = (Map<Field, Object>) fieldMapField
-					.get(bean);
-			map.put(new Field(valueName), value);
-		} catch (NoSuchFieldException | SecurityException
-				| IllegalArgumentException | IllegalAccessException e) {
-			throw new RuntimeException(e);
-		}
 	}
 
 	/**
