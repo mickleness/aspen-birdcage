@@ -141,15 +141,29 @@ public class OneRosterExport_1_1 extends ExportArbor {
 	static class CustomizedUser extends User implements CustomizedBean {
 		private static final long serialVersionUID = 1L;
 
-		/**
-		 * This is needed for the clone() method.
-		 */
 		public CustomizedUser() {
 			super();
 		}
 
 		public CustomizedUser(String uid) {
 			super(uid);
+		}
+
+		@Override
+		public CustomizedUser clone() {
+			CustomizedUser clone = new CustomizedUser();
+			for (Entry<Field, Object> entry : fieldMap.entrySet()) {
+				Object value = entry.getValue();
+				if (value instanceof Collection) {
+					Collection collection = (Collection) value;
+					List arrayList = new ArrayList(collection.size());
+					arrayList.addAll(collection);
+					value = arrayList;
+				}
+				clone.fieldMap.put(entry.getKey(), value);
+			}
+			clone.setStrictFieldValidation(strictFieldValidation);
+			return clone;
 		}
 
 		@Override
