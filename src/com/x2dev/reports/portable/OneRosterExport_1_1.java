@@ -151,6 +151,16 @@ public class OneRosterExport_1_1 extends ExportArbor {
 
 		@Override
 		public CustomizedUser clone() {
+			// grr. this doesn't do anything special compare to what
+			// super#clone() should do. But super#clone() throws an
+			// exception: "Class
+			// com.follett.cust.io.exporter.oneroster.OneRosterBean
+			// can not access a member of class
+			// com.x2dev.reports.portable.OneRosterExport_1_1$CustomizedUser
+			// with modifiers "public""
+
+			// ... so we'll override it explicitly so there's no reflection
+			// involved:
 			CustomizedUser clone = new CustomizedUser();
 			for (Entry<Field, Object> entry : fieldMap.entrySet()) {
 				Object value = entry.getValue();
@@ -1989,7 +1999,7 @@ public class OneRosterExport_1_1 extends ExportArbor {
 		Map<String, Field> fields = null;
 		for (OneRosterBeanType type : Manifest.getBeanTypes()) {
 			if (type.getSimpleName().equals(tabKey)) {
-				fields = type.getStandardFields();
+				fields = type.getFields();
 			}
 		}
 
@@ -1998,7 +2008,14 @@ public class OneRosterExport_1_1 extends ExportArbor {
 					"Unrecognized tab key \"" + tabKey + "\".");
 		}
 
+		// position "cell phone" column right after "phone" column
 		List<String> fieldNames = new ArrayList<>(fields.keySet());
+		int i1 = fieldNames.indexOf(User.FIELD_PHONE.toString());
+		if (i1 != -1) {
+			fieldNames.remove(FIELD_CELL_PHONE.toString());
+			fieldNames.add(i1 + 1, FIELD_CELL_PHONE.toString());
+		}
+
 		return fieldNames.toArray(new String[fieldNames.size()]);
 	}
 
