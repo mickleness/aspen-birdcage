@@ -10,7 +10,7 @@
  * ====================================================================
  */
 
-package com.x2dev.reports.portable;
+package org.abc.tools.exports;
 
 import java.io.Closeable;
 import java.io.OutputStream;
@@ -94,11 +94,16 @@ import com.x2dev.utils.X2BaseException;
 import com.x2dev.utils.types.PlainDate;
 
 /**
- *  * This produces a zip archive of csv files that comply with the  *
- * <a href="https://www.imsglobal.org/oneroster-v11-final-csv-tables">One Roster
- * CSV v1.1  * specification</a>.  *
+ * This is a modification of the OneRosterExport_1_1 available in Pando's
+ * "Portable Reports" that includes an additional field (cell phone) for User
+ * records. This can serve as a template for the types of changes necessary to
+ * add a custom field.
  * <p>
- *  * The recommended input parameters for this tool are:  *  *
+ * This produces a zip archive of csv files that comply with the
+ * <a href="https://www.imsglobal.org/oneroster-v11-final-csv-tables">One Roster
+ * CSV v1.1 specification</a>.
+ * <p>
+ * The recommended input parameters for this tool are:
  * 
  * <pre>
  *     &lt;tool-input allow-school-select="true" district-support="true" allow-year-select="true">
@@ -125,9 +130,9 @@ import com.x2dev.utils.types.PlainDate;
  *
  * </pre>
  * 
- *  *  * @author Follett School Solutions  
+ *  @author Follett School Solutions  
  */
-public class OneRosterExport_1_1 extends ExportArbor {
+public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 
 	public static final Field<String> FIELD_CELL_PHONE = new Field<>(
 			"Cell Phone");
