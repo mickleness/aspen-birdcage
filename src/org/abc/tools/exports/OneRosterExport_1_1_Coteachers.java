@@ -93,6 +93,10 @@ import com.x2dev.utils.X2BaseException;
 import com.x2dev.utils.types.PlainDate;
 
 /**
+ * This is modified from Aspen's original
+ * com.x2dev.reports.portable.OneRosterExport_1_1 implementation to better
+ * support adding non-primary teachers.
+ * <p>
  * This produces a zip archive of csv files that comply with the
  * <a href="https://www.imsglobal.org/oneroster-v11-final-csv-tables">One Roster
  * CSV v1.1 specification</a>.
@@ -935,12 +939,16 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 				.roomView();
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
+
+		BeanColumnPath stfPrimaryIndicator = SisBeanPaths.STUDENT_SCHEDULE
+				.section().teacherSections().primaryTeacherIndicator();
 		BeanColumnPath stfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.primaryStaff().oid();
+				.teacherSections().staffOid();
 		BeanColumnPath stfLocalId = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.primaryStaff().localId();
+				.teacherSections().staff().localId();
 		BeanColumnPath stfStateId = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.primaryStaff().stateId();
+				.teacherSections().staff().stateId();
+
 		BeanColumnPath stdNameView = SisBeanPaths.STUDENT_SCHEDULE.student()
 				.nameView();
 
@@ -957,6 +965,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		builder.addColumn(mstCourseView);
 		builder.addColumn(mstRoomView);
 		builder.addColumn(cskCourseNumber);
+		builder.addColumn(stfPrimaryIndicator);
 		builder.addColumn(stfOid);
 		builder.addColumn(stfLocalId);
 		builder.addColumn(stfStateId);
@@ -1002,6 +1011,8 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					String staff = (String) row.getValue(stfOid);
 					String staffLocalId = (String) row.getValue(stfLocalId);
 					String staffStateId = (String) row.getValue(stfStateId);
+					Boolean isPrimary = (Boolean) row
+							.getValue(stfPrimaryIndicator);
 
 					Enrollment enrollment = new Enrollment(enrollmentUid);
 					enrollment.setUserSourcedId(studentUid);
@@ -1044,7 +1055,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					staffEnrollment.setUserSourcedId(staffUser);
 					staffEnrollment.setSchoolSourcedId(orgUid);
 					staffEnrollment.setClassSourcedId(classUid);
-					staffEnrollment.setPrimary(Boolean.TRUE);
+					staffEnrollment.setPrimary(isPrimary.booleanValue());
 					staffEnrollment.setRole(RoleType.TEACHER);
 
 					if (!skipStaffBean) {
