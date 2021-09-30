@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -105,6 +106,13 @@ import com.x2dev.utils.types.PlainDate;
  *
  * <pre>
  *     &lt;tool-input allow-school-select="true" district-support="true" allow-year-select="true">
+ *         &lt;input name="excludedSchoolOids" data-type="string" display-type="picklist" display-name="Schools to Exclude" required="false">
+ *             &lt;picklist field-id="sklSchoolName" multiple="true" required="false" >
+ *                 &lt;field id="sklSchoolName" sort="true" />
+ *                 &lt;field id="sklSchoolID" />
+ *                 &lt;field id="sklInactiveInd" />
+ *             &lt;/picklist>
+ *         &lt;/input>
  *         &lt;input name="includeContacts" data-type="boolean" display-type="checkbox"
  *             display-name="Include Student Contacts" default-value="true" required="false" />
  *         &lt;input name="includeGrades" data-type="boolean" display-type="checkbox"
@@ -232,6 +240,12 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 	 * total amount of millions of records limit
 	 */
 	protected static final String PARAM_LIMIT = "maxMillionsOfRecords";
+
+	/**
+	 * This optional parameter maps to a comma-separated list of school oids to
+	 * skip.
+	 */
+	protected static final String PARAM_EXCLUDED_SCHOOLS = "excludedSchoolOids";
 
 	/**
 	 * This helper catalogs how often different errors occurred, and includes a
@@ -907,6 +921,11 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 			criteria.addEqualTo(SisBeanPaths.STUDENT_SCHEDULE.student().school()
 					.oid().toString(), schoolOid);
 		}
+		List<String> excludedSchools = getExludedSchoolOids();
+		if (!excludedSchools.isEmpty()) {
+			criteria.addNotIn(SisBeanPaths.STUDENT_SCHEDULE.student().school()
+					.oid().toString(), excludedSchools);
+		}
 		String contextOid = (String) getParameter(PARAM_CONTEXT_OID);
 		if (!StringUtils.isBlank(contextOid)) {
 			criteria.addEqualTo(SisBeanPaths.STUDENT_SCHEDULE.schedule()
@@ -1128,6 +1147,13 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					.masterSchedule().schedule().school().oid().toString(),
 					schoolOid);
 		}
+		List<String> excludedSchools = getExludedSchoolOids();
+		if (!excludedSchools.isEmpty()) {
+			criteria.addNotIn(
+					SisBeanPaths.GRADEBOOK_COLUMN_DEFINITION.masterSchedule()
+							.schedule().school().oid().toString(),
+					excludedSchools);
+		}
 		String contextOid = (String) getParameter(PARAM_CONTEXT_OID);
 		if (!StringUtils.isBlank(contextOid)) {
 			criteria.addEqualTo(SisBeanPaths.GRADEBOOK_COLUMN_DEFINITION
@@ -1328,6 +1354,12 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					.masterSchedule().schedule().school().oid().toString(),
 					schoolOid);
 		}
+		List<String> excludedSchools = getExludedSchoolOids();
+		if (!excludedSchools.isEmpty()) {
+			criteria.addNotIn(SisBeanPaths.GRADEBOOK_SCORE.columnDefinition()
+					.masterSchedule().schedule().school().oid().toString(),
+					excludedSchools);
+		}
 		String contextOid = (String) getParameter(PARAM_CONTEXT_OID);
 		if (!StringUtils.isBlank(contextOid)) {
 			criteria.addEqualTo(SisBeanPaths.GRADEBOOK_SCORE.columnDefinition()
@@ -1454,6 +1486,12 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 				criteria.addEqualTo(
 						SisBeanPaths.STUDENT.school().oid().toString(),
 						schoolOid);
+			}
+			List<String> excludedSchools = getExludedSchoolOids();
+			if (!excludedSchools.isEmpty()) {
+				criteria.addNotIn(
+						SisBeanPaths.STUDENT.school().oid().toString(),
+						excludedSchools);
 			}
 			criteria.addAndCriteria(
 					StudentManager.getActiveStudentStatusCriteria(
@@ -1683,8 +1721,13 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 			String schoolOid = (String) getParameter(PARAM_SCHOOL_OID);
 			if (!StringUtils.isBlank(schoolOid)) {
 				criteria.addEqualTo(
-						SisBeanPaths.STUDENT.school().oid().toString(),
+						SisBeanPaths.STAFF.school().oid().toString(),
 						schoolOid);
+			}
+			List<String> excludedSchools = getExludedSchoolOids();
+			if (!excludedSchools.isEmpty()) {
+				criteria.addNotIn(SisBeanPaths.STAFF.school().oid().toString(),
+						excludedSchools);
 			}
 			criteria.addEqualTo(SisBeanPaths.STAFF.status().toString(),
 					activeStatus);
@@ -1971,6 +2014,23 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 	@Override
 	protected FileType getFileType() {
 		return FileType.CSV_ZIP;
+	}
+
+	protected List<String> getExludedSchoolOids() {
+		// this is wordier than it needs to be, but I forget how exactly params
+		// are encoded:
+		String str = (String) getParameter(PARAM_EXCLUDED_SCHOOLS);
+		if (str != null)
+			str = str.trim();
+		if (str == null || str.isEmpty())
+			return Collections.EMPTY_LIST;
+		List<String> returnValue = new LinkedList<>();
+		for (String k : str.split(",")) {
+			k = k.trim();
+			if (!k.isEmpty())
+				returnValue.add(k);
+		}
+		return returnValue;
 	}
 
 	/**
