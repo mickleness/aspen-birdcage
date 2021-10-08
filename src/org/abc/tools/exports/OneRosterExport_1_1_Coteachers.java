@@ -1063,8 +1063,8 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					staffEnrollment.setUserSourcedId(staffUser);
 					staffEnrollment.setSchoolSourcedId(orgUid);
 					staffEnrollment.setClassSourcedId(classUid);
-					staffEnrollment.setPrimary(isPrimary == null ? true
-							: isPrimary.booleanValue());
+					if (isPrimary != null)
+						staffEnrollment.setPrimary(isPrimary.booleanValue());
 					staffEnrollment.setRole(RoleType.TEACHER);
 
 					if (!skipStaffBean) {
