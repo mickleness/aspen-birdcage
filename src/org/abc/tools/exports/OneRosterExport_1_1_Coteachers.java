@@ -950,13 +950,31 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
 
-		BeanColumnPath stfPrimaryIndicator = SisBeanPaths.STUDENT_SCHEDULE
+		// we populate teacher enrollments two different ways.
+		// #1: The MST record includes a "primaryStaff" relationship. This is
+		// what we used for several years, until some users on a mailing list
+		// pointed out they needed coteachers (nonprimary) teachers too.
+		// #2: So we added teachers from the MTC records too.
+
+		// Theoretically the second case is all we ever need. Probably. But that
+		// assumes the MTC table is perfectly maintained. Just in case it's not:
+		// let's continue to poll both pieces of info. So with this new revision
+		// we shouldn't risk *losing* any data, we should only ever add data.
+
+		BeanColumnPath mstStfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
+				.primaryStaff().oid();
+		BeanColumnPath mstStfLocalId = SisBeanPaths.STUDENT_SCHEDULE.section()
+				.primaryStaff().localId();
+		BeanColumnPath mstStfStateId = SisBeanPaths.STUDENT_SCHEDULE.section()
+				.primaryStaff().stateId();
+
+		BeanColumnPath mtcStfPrimaryIndicator = SisBeanPaths.STUDENT_SCHEDULE
 				.section().teacherSections().primaryTeacherIndicator();
-		BeanColumnPath stfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
+		BeanColumnPath mtcStfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.teacherSections().staffOid();
-		BeanColumnPath stfLocalId = SisBeanPaths.STUDENT_SCHEDULE.section()
+		BeanColumnPath mtcStfLocalId = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.teacherSections().staff().localId();
-		BeanColumnPath stfStateId = SisBeanPaths.STUDENT_SCHEDULE.section()
+		BeanColumnPath mtcStfStateId = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.teacherSections().staff().stateId();
 
 		BeanColumnPath stdNameView = SisBeanPaths.STUDENT_SCHEDULE.student()
@@ -975,10 +993,13 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		builder.addColumn(mstCourseView);
 		builder.addColumn(mstRoomView);
 		builder.addColumn(cskCourseNumber);
-		builder.addColumn(stfPrimaryIndicator);
-		builder.addColumn(stfOid);
-		builder.addColumn(stfLocalId);
-		builder.addColumn(stfStateId);
+		builder.addColumn(mtcStfPrimaryIndicator);
+		builder.addColumn(mtcStfOid);
+		builder.addColumn(mtcStfLocalId);
+		builder.addColumn(mtcStfStateId);
+		builder.addColumn(mstStfOid);
+		builder.addColumn(mstStfLocalId);
+		builder.addColumn(mstStfStateId);
 		builder.addColumn(stdNameView);
 
 		try (RowResult.Iterator<StudentSchedule> iter = builder
@@ -1018,11 +1039,8 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 
 					String schoolYearId = getSchoolYearId(
 							(String) row.getValue(trmOid));
-					String staff = (String) row.getValue(stfOid);
-					String staffLocalId = (String) row.getValue(stfLocalId);
-					String staffStateId = (String) row.getValue(stfStateId);
-					Boolean isPrimary = (Boolean) row
-							.getValue(stfPrimaryIndicator);
+
+					List<OneRosterBean> beansToSave = new LinkedList<>();
 
 					Enrollment enrollment = new Enrollment(enrollmentUid);
 					enrollment.setUserSourcedId(studentUid);
@@ -1030,6 +1048,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					enrollment.setClassSourcedId(classUid);
 					enrollment.setPrimary(Boolean.FALSE);
 					enrollment.setRole(RoleType.STUDENT);
+					beansToSave.add(enrollment);
 
 					com.follett.cust.io.exporter.oneroster.v1_1.Class c = new com.follett.cust.io.exporter.oneroster.v1_1.Class(
 							classUid);
@@ -1042,6 +1061,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
+					beansToSave.add(c);
 
 					Course course = new Course(courseUid);
 					course.setOrgSourcedId(orgUid);
@@ -1050,29 +1070,61 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					course.setCourseCode(courseCode);
 					course.setGrades(asList(grade));
 					course.setSubjects(subjects);
+					beansToSave.add(course);
 
-					String staffUser = createUid(staff, staffLocalId,
-							staffStateId);
-
-					boolean skipStaffBean = staffUser == null;
-					String staffEnrollmentUid = createUid(
-							(String) row.getValue(mstOid), null, null) + "_"
-							+ staffUser;
-					Enrollment staffEnrollment = new Enrollment(
-							staffEnrollmentUid);
-					staffEnrollment.setUserSourcedId(staffUser);
-					staffEnrollment.setSchoolSourcedId(orgUid);
-					staffEnrollment.setClassSourcedId(classUid);
-					if (isPrimary != null)
-						staffEnrollment.setPrimary(isPrimary.booleanValue());
-					staffEnrollment.setRole(RoleType.TEACHER);
-
-					if (!skipStaffBean) {
-						saveBean(row, false, enrollment, c, course,
-								staffEnrollment);
-					} else {
-						saveBean(row, false, enrollment, c, course);
+					class StaffDescription {
+						String staffOid, staffLocalId, staffStateId;
+						Boolean isPrimary;
 					}
+
+					StaffDescription description1 = new StaffDescription();
+					StaffDescription description2 = new StaffDescription();
+
+					description1.staffOid = (String) row.getValue(mtcStfOid);
+					description1.staffLocalId = (String) row
+							.getValue(mtcStfLocalId);
+					description1.staffStateId = (String) row
+							.getValue(mtcStfStateId);
+					description1.isPrimary = (Boolean) row
+							.getValue(mtcStfPrimaryIndicator);
+
+					description2.staffOid = (String) row.getValue(mstStfOid);
+					description2.staffLocalId = (String) row
+							.getValue(mstStfLocalId);
+					description2.staffStateId = (String) row
+							.getValue(mstStfStateId);
+
+					// the "mstStf" fields came from a relationship labeled
+					// "primaryStaff", so it's safe to assume "isPrimary" should
+					// always be true.
+					description2.isPrimary = Boolean.TRUE;
+
+					for (StaffDescription description : new StaffDescription[] {
+							description1, description2 }) {
+
+						String staffUser = createUid(description.staffOid,
+								description.staffLocalId,
+								description.staffStateId);
+
+						boolean skipStaffBean = staffUser == null;
+						if (!skipStaffBean) {
+							String staffEnrollmentUid = createUid(
+									(String) row.getValue(mstOid), null, null)
+									+ "_" + staffUser;
+							Enrollment staffEnrollment = new Enrollment(
+									staffEnrollmentUid);
+							staffEnrollment.setUserSourcedId(staffUser);
+							staffEnrollment.setSchoolSourcedId(orgUid);
+							staffEnrollment.setClassSourcedId(classUid);
+							staffEnrollment.setPrimary(description.isPrimary);
+							staffEnrollment.setRole(RoleType.TEACHER);
+
+							beansToSave.add(staffEnrollment);
+						}
+					}
+
+					saveBean(row, false,
+							beansToSave.toArray(new OneRosterBean[0]));
 					ctr++;
 				} catch (RuntimeException e) {
 					m_exceptionHandler.handleRuntimeException(e);
