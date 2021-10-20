@@ -633,6 +633,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 
 	Map<BeanId, OneRosterBean> m_allBeans = new HashMap<>();
 	FieldValidationExceptionHandler m_exceptionHandler;
+	Collection<String> unresolvedGradeLevels = new TreeSet<>();
 
 	public static final OidEncoder OID_ENCODER = new OidEncoder(true, true,
 			true);
@@ -1024,8 +1025,15 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 							null, null);
 					String classTitle = (String) row
 							.getValue(cskCourseDescription);
-					GradeLevel grade = GradeLevel
-							.get((String) row.getValue(crsGradeLevel));
+
+					String crsGradeLevelValue = (String) row
+							.getValue(crsGradeLevel);
+					GradeLevel grade = GradeLevel.get(crsGradeLevelValue);
+
+					if (grade == null) {
+						unresolvedGradeLevels.add(crsGradeLevelValue);
+					}
+
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
 
@@ -1639,8 +1647,13 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 								.getValue(stdPsnUsrLogin);
 						String stdSchoolOid = (String) result
 								.getValue(stdSklOid);
-						GradeLevel grade = GradeLevel
-								.get((String) result.getValue(stdGradeLevel));
+						String stdGradeLevelValue = (String) result
+								.getValue(stdGradeLevel);
+						GradeLevel grade = GradeLevel.get(stdGradeLevelValue);
+
+						if (grade == null) {
+							unresolvedGradeLevels.add(stdGradeLevelValue);
+						}
 
 						Boolean enabledUser = Boolean
 								.valueOf(StudentManager.isActiveStudent(
@@ -1932,6 +1945,14 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 						"Logged "
 								+ NumberFormat.getInstance().format(resultCount)
 								+ " Results.",
+						false);
+			}
+
+			if (!unresolvedGradeLevels.isEmpty()) {
+				logToolMessage(Level.INFO,
+						"The following grade levels are unresolved: "
+								+ unresolvedGradeLevels
+								+ "\n\nThis means these values were identified in COURSE and STUDENT records in Aspen, but this export was unable to convert those to One Roster's specifications.",
 						false);
 			}
 
