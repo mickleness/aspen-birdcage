@@ -1961,7 +1961,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 						false);
 			}
 
-			if (!unresolvedGradeLevels.isEmpty()) {
+			if (true || !unresolvedGradeLevels.isEmpty()) {
 				logToolMessage(Level.INFO,
 						"The following grade levels are unresolved: "
 								+ unresolvedGradeLevels
