@@ -1028,11 +1028,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 
 					String crsGradeLevelValue = (String) row
 							.getValue(crsGradeLevel);
-					GradeLevel grade = GradeLevel.get(crsGradeLevelValue);
-
-					if (grade == null) {
-						unresolvedGradeLevels.add(crsGradeLevelValue);
-					}
+					GradeLevel grade = getGradeLevel(crsGradeLevelValue);
 
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
@@ -1148,6 +1144,39 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		}
 
 		return ctr;
+	}
+
+	/**
+	 * Identify the GradeLevel enum for a given String.
+	 */
+	private GradeLevel getGradeLevel(String gradeLevelStr) {
+		// GradeLevel.get(String) does an OK job, but over time we found
+		// there are some more cases we need to catch. (And I no longer
+		// have access to the customizations jar where GradeLevel.java
+		// lives, so I can't update that method.)
+
+		GradeLevel returnValue = GradeLevel.get(gradeLevelStr);
+		if (returnValue == null) {
+			if ("Grade 1".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G01;
+			} else if ("Grade 2".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G02;
+			} else if ("Grade 3".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G03;
+			} else if ("Grade 4".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G04;
+			} else if ("Grade 5".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G05;
+			} else if ("KF".equalsIgnoreCase(gradeLevelStr)
+					|| "Kindergarten".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.KG;
+			}
+		}
+		if (returnValue == null) {
+			unresolvedGradeLevels.add(gradeLevelStr);
+			returnValue = GradeLevel.OTHER;
+		}
+		return returnValue;
 	}
 
 	protected int createLineItems() throws RecordLimitException {
@@ -1649,11 +1678,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 								.getValue(stdSklOid);
 						String stdGradeLevelValue = (String) result
 								.getValue(stdGradeLevel);
-						GradeLevel grade = GradeLevel.get(stdGradeLevelValue);
-
-						if (grade == null) {
-							unresolvedGradeLevels.add(stdGradeLevelValue);
-						}
+						GradeLevel grade = getGradeLevel(stdGradeLevelValue);
 
 						Boolean enabledUser = Boolean
 								.valueOf(StudentManager.isActiveStudent(
@@ -1854,10 +1879,9 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 
 						if (role == null) {
 							// assume if we haven't flagged a staff as anything
-							// else that we'll call
-							// them a teacher. Teachers who aren't collected to
-							// any enrollment
-							// records are dropped at the end of this export
+							// else that we'll call them a teacher. Teachers
+							// who aren't connected to any enrollment records
+							// are dropped at the end of this export
 							role = RoleType.TEACHER;
 						}
 
@@ -1948,7 +1972,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 						false);
 			}
 
-			if (true || !unresolvedGradeLevels.isEmpty()) {
+			if (!unresolvedGradeLevels.isEmpty()) {
 				logToolMessage(Level.INFO,
 						"The following grade levels are unresolved: "
 								+ unresolvedGradeLevels
