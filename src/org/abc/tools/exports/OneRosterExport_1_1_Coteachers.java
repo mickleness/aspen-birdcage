@@ -633,6 +633,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 
 	Map<BeanId, OneRosterBean> m_allBeans = new HashMap<>();
 	FieldValidationExceptionHandler m_exceptionHandler;
+	Collection<String> unresolvedGradeLevels = new TreeSet<>();
 
 	public static final OidEncoder OID_ENCODER = new OidEncoder(true, true,
 			true);
@@ -1024,8 +1025,11 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 							null, null);
 					String classTitle = (String) row
 							.getValue(cskCourseDescription);
-					GradeLevel grade = GradeLevel
-							.get((String) row.getValue(crsGradeLevel));
+
+					String crsGradeLevelValue = (String) row
+							.getValue(crsGradeLevel);
+					GradeLevel grade = getGradeLevel(crsGradeLevelValue);
+
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
 
@@ -1140,6 +1144,39 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		}
 
 		return ctr;
+	}
+
+	/**
+	 * Identify the GradeLevel enum for a given String.
+	 */
+	private GradeLevel getGradeLevel(String gradeLevelStr) {
+		// GradeLevel.get(String) does an OK job, but over time we found
+		// there are some more cases we need to catch. (And I no longer
+		// have access to the customizations jar where GradeLevel.java
+		// lives, so I can't update that method.)
+
+		GradeLevel returnValue = GradeLevel.get(gradeLevelStr);
+		if (returnValue == null) {
+			if ("Grade 1".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G01;
+			} else if ("Grade 2".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G02;
+			} else if ("Grade 3".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G03;
+			} else if ("Grade 4".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G04;
+			} else if ("Grade 5".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.G05;
+			} else if ("KF".equalsIgnoreCase(gradeLevelStr)
+					|| "Kindergarten".equalsIgnoreCase(gradeLevelStr)) {
+				returnValue = GradeLevel.KG;
+			}
+		}
+		if (returnValue == null) {
+			unresolvedGradeLevels.add(gradeLevelStr);
+			returnValue = GradeLevel.OTHER;
+		}
+		return returnValue;
 	}
 
 	protected int createLineItems() throws RecordLimitException {
@@ -1639,8 +1676,9 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 								.getValue(stdPsnUsrLogin);
 						String stdSchoolOid = (String) result
 								.getValue(stdSklOid);
-						GradeLevel grade = GradeLevel
-								.get((String) result.getValue(stdGradeLevel));
+						String stdGradeLevelValue = (String) result
+								.getValue(stdGradeLevel);
+						GradeLevel grade = getGradeLevel(stdGradeLevelValue);
 
 						Boolean enabledUser = Boolean
 								.valueOf(StudentManager.isActiveStudent(
@@ -1841,10 +1879,9 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 
 						if (role == null) {
 							// assume if we haven't flagged a staff as anything
-							// else that we'll call
-							// them a teacher. Teachers who aren't collected to
-							// any enrollment
-							// records are dropped at the end of this export
+							// else that we'll call them a teacher. Teachers
+							// who aren't connected to any enrollment records
+							// are dropped at the end of this export
 							role = RoleType.TEACHER;
 						}
 
@@ -1932,6 +1969,14 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 						"Logged "
 								+ NumberFormat.getInstance().format(resultCount)
 								+ " Results.",
+						false);
+			}
+
+			if (!unresolvedGradeLevels.isEmpty()) {
+				logToolMessage(Level.INFO,
+						"The following grade levels are unresolved: "
+								+ unresolvedGradeLevels
+								+ "\n\nThis means these values were identified in COURSE and STUDENT records in Aspen, but this export was unable to convert those to One Roster's specifications.",
 						false);
 			}
 
