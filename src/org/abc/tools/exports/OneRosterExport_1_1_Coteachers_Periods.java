@@ -1083,8 +1083,8 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 						List<String> periods = c.getPeriods();
 						if (periods == null) {
 							periods = new LinkedList<>();
-							periods.add(Integer.toString(period));
 						}
+						periods.add(Integer.toString(period));
 						c.setPeriods(periods);
 					}
 
