@@ -952,6 +952,9 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
 
+		BeanColumnPath perNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
+				.schedule().schedulePeriods().number();
+
 		// we populate teacher enrollments two different ways.
 		// #1: The MST record includes a "primaryStaff" relationship. This is
 		// what we used for several years, until some users on a mailing list
@@ -1003,9 +1006,13 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 		builder.addColumn(mstStfLocalId);
 		builder.addColumn(mstStfStateId);
 		builder.addColumn(stdNameView);
+		builder.addColumn(perNumber);
 
 		try (RowResult.Iterator<StudentSchedule> iter = builder
 				.createIterator(getBroker(), criteria)) {
+
+			Map<String, com.follett.cust.io.exporter.oneroster.v1_1.Class> classMap = new HashMap<>();
+
 			while (iter.hasNext()) {
 				RowResult<StudentSchedule> row = iter.next();
 				String studentUid = createUid((String) row.getValue(stdOid),
@@ -1033,6 +1040,7 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
+					int period = parseInteger(row.getValue(perNumber), -1);
 
 					// TO-DO: class type can "scheduled" or "homeroom": how do
 					// we detect homerooms?
@@ -1055,8 +1063,13 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 					enrollment.setRole(RoleType.STUDENT);
 					beansToSave.add(enrollment);
 
-					com.follett.cust.io.exporter.oneroster.v1_1.Class c = new com.follett.cust.io.exporter.oneroster.v1_1.Class(
-							classUid);
+					com.follett.cust.io.exporter.oneroster.v1_1.Class c = classMap
+							.get(classUid);
+					if (c == null) {
+						c = new com.follett.cust.io.exporter.oneroster.v1_1.Class(
+								classUid);
+						classMap.put(classUid, c);
+					}
 					c.setTermSourcedIds(asList(classTermSourcedId));
 					c.setCourseSourcedId(courseUid);
 					c.setSchoolSourcedId(orgUid);
@@ -1066,7 +1079,17 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
-					beansToSave.add(c);
+					if (period != -1) {
+						List<String> periods = c.getPeriods();
+						if (periods == null) {
+							periods = new LinkedList<>();
+							periods.add(Integer.toString(period));
+						}
+						c.setPeriods(periods);
+					}
+
+					if (!beansToSave.contains(c))
+						beansToSave.add(c);
 
 					Course course = new Course(courseUid);
 					course.setOrgSourcedId(orgUid);
@@ -1145,6 +1168,18 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 		}
 
 		return ctr;
+	}
+
+	/**
+	 * Return an int representing the value, or 'defaultValue' if 'value'
+	 * couldn't be parsed.
+	 */
+	private int parseInteger(Object value, int defaultValue) {
+		try {
+			return Integer.parseInt(String.valueOf(value));
+		} catch (Throwable t) {
+			return defaultValue;
+		}
 	}
 
 	/**
