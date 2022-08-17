@@ -1209,7 +1209,7 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 			}
 		}
 		if (returnValue == null) {
-			unresolvedGradeLevels.add(gradeLevelStr);
+			unresolvedGradeLevels.add(String.valueOf(gradeLevelStr));
 			returnValue = GradeLevel.OTHER;
 		}
 		return returnValue;
