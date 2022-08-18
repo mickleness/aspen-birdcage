@@ -952,8 +952,8 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
 
-		BeanColumnPath perNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.schedule().schedulePeriods().number();
+		BeanColumnPath mstScheduleDisplay = SisBeanPaths.STUDENT_SCHEDULE
+				.section().scheduleDisplay();
 
 		// we populate teacher enrollments two different ways.
 		// #1: The MST record includes a "primaryStaff" relationship. This is
@@ -1006,13 +1006,10 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 		builder.addColumn(mstStfLocalId);
 		builder.addColumn(mstStfStateId);
 		builder.addColumn(stdNameView);
-		builder.addColumn(perNumber);
+		builder.addColumn(mstScheduleDisplay);
 
 		try (RowResult.Iterator<StudentSchedule> iter = builder
 				.createIterator(getBroker(), criteria)) {
-
-			Map<String, com.follett.cust.io.exporter.oneroster.v1_1.Class> classMap = new HashMap<>();
-
 			while (iter.hasNext()) {
 				RowResult<StudentSchedule> row = iter.next();
 				String studentUid = createUid((String) row.getValue(stdOid),
@@ -1040,7 +1037,8 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
-					int period = parseInteger(row.getValue(perNumber), -1);
+					String scheduleDisplay = (String) row
+							.getValue(mstScheduleDisplay);
 
 					// TO-DO: class type can "scheduled" or "homeroom": how do
 					// we detect homerooms?
@@ -1063,13 +1061,8 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 					enrollment.setRole(RoleType.STUDENT);
 					beansToSave.add(enrollment);
 
-					com.follett.cust.io.exporter.oneroster.v1_1.Class c = classMap
-							.get(classUid);
-					if (c == null) {
-						c = new com.follett.cust.io.exporter.oneroster.v1_1.Class(
-								classUid);
-						classMap.put(classUid, c);
-					}
+					com.follett.cust.io.exporter.oneroster.v1_1.Class c = new com.follett.cust.io.exporter.oneroster.v1_1.Class(
+							classUid);
 					c.setTermSourcedIds(asList(classTermSourcedId));
 					c.setCourseSourcedId(courseUid);
 					c.setSchoolSourcedId(orgUid);
@@ -1079,14 +1072,8 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
-					if (period != -1) {
-						List<String> periods = c.getPeriods();
-						if (periods == null) {
-							periods = new LinkedList<>();
-						}
-						periods.add(Integer.toString(period));
-						c.setPeriods(periods);
-					}
+					if (scheduleDisplay != null)
+						c.setPeriods(Arrays.asList(scheduleDisplay));
 
 					if (!beansToSave.contains(c))
 						beansToSave.add(c);
