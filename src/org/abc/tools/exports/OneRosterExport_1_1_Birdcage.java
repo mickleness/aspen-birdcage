@@ -98,6 +98,7 @@ import com.x2dev.utils.types.PlainDate;
  * com.x2dev.reports.portable.OneRosterExport_1_1 implementation as follows:
  * <ul>
  * <li>This export supports identifying non-primary teachers.</li>
+ * <li>This export supports the "periods" column in classes.csv.</li>
  * <li>This export supports a "Schools to Exclude" input parameter.</li>
  * <li>Misc minor bug fixes</li>
  * </ul>
@@ -964,6 +965,9 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
 
+		BeanColumnPath mstScheduleDisplay = SisBeanPaths.STUDENT_SCHEDULE
+				.section().scheduleDisplay();
+
 		// we populate teacher enrollments two different ways.
 		// #1: The MST record includes a "primaryStaff" relationship. This is
 		// what we used for several years, until some users on a mailing list
@@ -1015,6 +1019,7 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		builder.addColumn(mstStfLocalId);
 		builder.addColumn(mstStfStateId);
 		builder.addColumn(stdNameView);
+		builder.addColumn(mstScheduleDisplay);
 
 		try (RowResult.Iterator<StudentSchedule> iter = builder
 				.createIterator(getBroker(), criteria)) {
@@ -1045,6 +1050,8 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
+					String scheduleDisplay = (String) row
+							.getValue(mstScheduleDisplay);
 
 					// TO-DO: class type can "scheduled" or "homeroom": how do
 					// we detect homerooms?
@@ -1080,6 +1087,9 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
+					if (scheduleDisplay != null)
+						c.setPeriods(Arrays.asList(scheduleDisplay));
+
 					beansToSave.add(c);
 
 					Course course = new Course(courseUid);
@@ -1188,7 +1198,7 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 			}
 		}
 		if (returnValue == null) {
-			unresolvedGradeLevels.add(gradeLevelStr);
+			unresolvedGradeLevels.add(String.valueOf(gradeLevelStr));
 			returnValue = GradeLevel.OTHER;
 		}
 		return returnValue;
