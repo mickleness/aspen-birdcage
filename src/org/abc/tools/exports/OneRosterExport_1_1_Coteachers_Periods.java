@@ -1,4 +1,4 @@
-// Catalog Creation Date : 09-19-2017
+// Catalog Creation Date : 03-24-2020
 /*
  * ====================================================================
  *
@@ -140,6 +140,11 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 			super(msg);
 		}
 	}
+
+	/**
+	 * Disables PERFMON4J monitoring See T30502294
+	 */
+	private static final String NO_PERFMON4J_INSTRUMENTATION = "";
 
 	/**
 	 * Given a series of columns for this ScheduleTerm, return the longest one
@@ -598,7 +603,7 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 		while (as != null) {
 			ThreadUtils.checkInterrupt();
 
-			if ("schoolYear".equals(as.getType())) {
+			if ("schoolYear".equals(as.getType().name())) {
 				return as.getSourcedId();
 			}
 
@@ -671,6 +676,10 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 			"DCF Social Worker", "ESP", "Friend", "Neighbor",
 			"Ongoing Social Worke", "Self", "Social Worker", "Student",
 			"Surrogate");
+
+	private List<String> barglist = Arrays.asList("Administration",
+			"Facilities", "Food Service", "Nurses", "Administration", "Other",
+			"Secretarial", "TA/EA", "Teachers");
 
 	/**
 	 * The last timestamp when a UserToolDetail message was updated.
@@ -1008,7 +1017,9 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 					c.setSchoolSourcedId(orgUid);
 					c.setTitle(classTitle);
 					c.setClassType(classType);
-					c.setGrades(asList(grade));
+					if (grade != null) {
+						c.setGrades(asList(grade));
+					}
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
@@ -1666,6 +1677,8 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 			}
 			criteria.addEqualTo(SisBeanPaths.STAFF.status().toString(),
 					activeStatus);
+			criteria.addIn(SisBeanPaths.STAFF.bargainingUnit().toString(),
+					barglist);
 
 			RowResult.IteratorBuilder<SisStaff> builder = new RowResult.IteratorBuilder<>(
 					getBroker().getPersistenceKey(), SisStaff.class);
@@ -2071,7 +2084,19 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 						new BeanId(Organization.TYPE, e.getSchoolSourcedId()));
 				requiredNodes.add(new BeanId(User.TYPE, e.getUserSourcedId()));
 			} else if (bean instanceof User) {
-				requiredNodes.add(bean.getBeanId());
+				User user = (User) bean;
+				RoleType role = user.getRole();
+				/*
+				 * We'll give a free pass to students and contacts and
+				 * administrators, but "teachers" need to be dropped unless
+				 * we're explicitly sure they're appropriate. Earlier (search
+				 * for "User.FIELD_ROLE.validate") we assume unrecognized users
+				 * are teachers with the assumption that we'll prune mistakes
+				 * later -- this is where that pruning occurs.
+				 */
+				if (!RoleType.TEACHER.equals(role)) {
+					requiredNodes.add(bean.getBeanId());
+				}
 			}
 		}
 
@@ -2239,7 +2264,8 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 				if (bean instanceof User) {
 					RoleType role = ((User) bean).getRole();
 					if (RoleType.ADMINISTRATOR == role || RoleType.AIDE == role
-							|| RoleType.PROCTOR == role) {
+							|| RoleType.PROCTOR == role
+							|| RoleType.TEACHER == role) {
 						continue;
 					}
 				}
@@ -2355,7 +2381,7 @@ public class OneRosterExport_1_1_Coteachers_Periods extends ExportArbor {
 				&& genderCode.toUpperCase().startsWith("F")) {
 			demographics.setSex(Gender.FEMALE);
 		}
-		saveBean(null, true, demographics);
+		saveBean(null, false, demographics);
 		return true;
 	}
 
