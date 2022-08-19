@@ -95,8 +95,12 @@ import com.x2dev.utils.types.PlainDate;
 
 /**
  * This is modified from Aspen's original
- * com.x2dev.reports.portable.OneRosterExport_1_1 implementation to better
- * support adding non-primary teachers.
+ * com.x2dev.reports.portable.OneRosterExport_1_1 implementation as follows:
+ * <ul>
+ * <li>This export supports identifying non-primary teachers.</li>
+ * <li>This export supports a "Schools to Exclude" input parameter.</li>
+ * <li>Misc minor bug fixes</li>
+ * </ul>
  * <p>
  * This produces a zip archive of csv files that comply with the
  * <a href="https://www.imsglobal.org/oneroster-v11-final-csv-tables">One Roster
@@ -137,7 +141,7 @@ import com.x2dev.utils.types.PlainDate;
  *
  * @author Follett School Solutions
  */
-public class OneRosterExport_1_1_Coteachers extends ExportArbor {
+public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 	/**
 	 * This exception is thrown when we create too many beans and we want to
