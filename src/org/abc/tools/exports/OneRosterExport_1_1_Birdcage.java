@@ -103,6 +103,9 @@ import com.x2dev.utils.types.PlainDate;
  * <li>Misc minor bug fixes</li>
  * </ul>
  * <p>
+ * See:
+ * https://github.com/mickleness/aspen-birdcage/wiki/Birdcage-One-Roster-CSV-Export
+ * <p>
  * This produces a zip archive of csv files that comply with the
  * <a href="https://www.imsglobal.org/oneroster-v11-final-csv-tables">One Roster
  * CSV v1.1 specification</a>.
