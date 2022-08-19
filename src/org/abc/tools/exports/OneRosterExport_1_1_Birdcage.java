@@ -1087,8 +1087,14 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
-					if (scheduleDisplay != null)
-						c.setPeriods(Arrays.asList(scheduleDisplay));
+					if (scheduleDisplay != null) {
+						// this should be something like: "D(1,4) E(1,3-4,6)"
+						// I'm nervous the comma might screw up some 3rd party
+						// parsers ... but we'll cross that bridge when someone
+						// brings it up.
+						String[] periods = scheduleDisplay.split(" ");
+						c.setPeriods(Arrays.asList(periods));
+					}
 
 					beansToSave.add(c);
 
