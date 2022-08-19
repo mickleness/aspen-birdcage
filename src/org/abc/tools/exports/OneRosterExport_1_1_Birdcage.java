@@ -1,4 +1,4 @@
-// Catalog Creation Date : 09-19-2017
+// Catalog Creation Date : 03-24-2020
 /*
  * ====================================================================
  *
@@ -95,8 +95,13 @@ import com.x2dev.utils.types.PlainDate;
 
 /**
  * This is modified from Aspen's original
- * com.x2dev.reports.portable.OneRosterExport_1_1 implementation to better
- * support adding non-primary teachers.
+ * com.x2dev.reports.portable.OneRosterExport_1_1 implementation as follows:
+ * <ul>
+ * <li>This export supports identifying non-primary teachers.</li>
+ * <li>This export supports the "periods" column in classes.csv.</li>
+ * <li>This export supports a "Schools to Exclude" input parameter.</li>
+ * <li>Misc minor bug fixes</li>
+ * </ul>
  * <p>
  * This produces a zip archive of csv files that comply with the
  * <a href="https://www.imsglobal.org/oneroster-v11-final-csv-tables">One Roster
@@ -137,7 +142,7 @@ import com.x2dev.utils.types.PlainDate;
  *
  * @author Follett School Solutions
  */
-public class OneRosterExport_1_1_Coteachers extends ExportArbor {
+public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 	/**
 	 * This exception is thrown when we create too many beans and we want to
@@ -152,6 +157,11 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 			super(msg);
 		}
 	}
+
+	/**
+	 * Disables PERFMON4J monitoring See T30502294
+	 */
+	private static final String NO_PERFMON4J_INSTRUMENTATION = "";
 
 	/**
 	 * Given a series of columns for this ScheduleTerm, return the longest one
@@ -616,7 +626,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		while (as != null) {
 			ThreadUtils.checkInterrupt();
 
-			if ("schoolYear".equals(as.getType())) {
+			if ("schoolYear".equals(as.getType().name())) {
 				return as.getSourcedId();
 			}
 
@@ -690,6 +700,10 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 			"DCF Social Worker", "ESP", "Friend", "Neighbor",
 			"Ongoing Social Worke", "Self", "Social Worker", "Student",
 			"Surrogate");
+
+	private List<String> barglist = Arrays.asList("Administration",
+			"Facilities", "Food Service", "Nurses", "Administration", "Other",
+			"Secretarial", "TA/EA", "Teachers");
 
 	/**
 	 * The last timestamp when a UserToolDetail message was updated.
@@ -951,6 +965,9 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
 
+		BeanColumnPath mstScheduleDisplay = SisBeanPaths.STUDENT_SCHEDULE
+				.section().scheduleDisplay();
+
 		// we populate teacher enrollments two different ways.
 		// #1: The MST record includes a "primaryStaff" relationship. This is
 		// what we used for several years, until some users on a mailing list
@@ -1002,6 +1019,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 		builder.addColumn(mstStfLocalId);
 		builder.addColumn(mstStfStateId);
 		builder.addColumn(stdNameView);
+		builder.addColumn(mstScheduleDisplay);
 
 		try (RowResult.Iterator<StudentSchedule> iter = builder
 				.createIterator(getBroker(), criteria)) {
@@ -1032,6 +1050,8 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
+					String scheduleDisplay = (String) row
+							.getValue(mstScheduleDisplay);
 
 					// TO-DO: class type can "scheduled" or "homeroom": how do
 					// we detect homerooms?
@@ -1061,10 +1081,21 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 					c.setSchoolSourcedId(orgUid);
 					c.setTitle(classTitle);
 					c.setClassType(classType);
-					c.setGrades(asList(grade));
+					if (grade != null) {
+						c.setGrades(asList(grade));
+					}
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
+					if (scheduleDisplay != null) {
+						// this should be something like: "D(1,4) E(1,3-4,6)"
+						// I'm nervous the comma might screw up some 3rd party
+						// parsers ... but we'll cross that bridge when someone
+						// brings it up.
+						String[] periods = scheduleDisplay.split(" ");
+						c.setPeriods(Arrays.asList(periods));
+					}
+
 					beansToSave.add(c);
 
 					Course course = new Course(courseUid);
@@ -1173,7 +1204,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 			}
 		}
 		if (returnValue == null) {
-			unresolvedGradeLevels.add(gradeLevelStr);
+			unresolvedGradeLevels.add(String.valueOf(gradeLevelStr));
 			returnValue = GradeLevel.OTHER;
 		}
 		return returnValue;
@@ -1811,6 +1842,8 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 			}
 			criteria.addEqualTo(SisBeanPaths.STAFF.status().toString(),
 					activeStatus);
+			criteria.addIn(SisBeanPaths.STAFF.bargainingUnit().toString(),
+					barglist);
 
 			RowResult.IteratorBuilder<SisStaff> builder = new RowResult.IteratorBuilder<>(
 					getBroker().getPersistenceKey(), SisStaff.class);
@@ -2240,7 +2273,19 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 						new BeanId(Organization.TYPE, e.getSchoolSourcedId()));
 				requiredNodes.add(new BeanId(User.TYPE, e.getUserSourcedId()));
 			} else if (bean instanceof User) {
-				requiredNodes.add(bean.getBeanId());
+				User user = (User) bean;
+				RoleType role = user.getRole();
+				/*
+				 * We'll give a free pass to students and contacts and
+				 * administrators, but "teachers" need to be dropped unless
+				 * we're explicitly sure they're appropriate. Earlier (search
+				 * for "User.FIELD_ROLE.validate") we assume unrecognized users
+				 * are teachers with the assumption that we'll prune mistakes
+				 * later -- this is where that pruning occurs.
+				 */
+				if (!RoleType.TEACHER.equals(role)) {
+					requiredNodes.add(bean.getBeanId());
+				}
 			}
 		}
 
@@ -2408,7 +2453,8 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 				if (bean instanceof User) {
 					RoleType role = ((User) bean).getRole();
 					if (RoleType.ADMINISTRATOR == role || RoleType.AIDE == role
-							|| RoleType.PROCTOR == role) {
+							|| RoleType.PROCTOR == role
+							|| RoleType.TEACHER == role) {
 						continue;
 					}
 				}
@@ -2524,7 +2570,7 @@ public class OneRosterExport_1_1_Coteachers extends ExportArbor {
 				&& genderCode.toUpperCase().startsWith("F")) {
 			demographics.setSex(Gender.FEMALE);
 		}
-		saveBean(null, true, demographics);
+		saveBean(null, false, demographics);
 		return true;
 	}
 
