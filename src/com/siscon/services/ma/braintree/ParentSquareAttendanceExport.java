@@ -61,6 +61,7 @@ public class ParentSquareAttendanceExport extends ExportJavaSource
         X2Criteria criteria = new X2Criteria();
         criteria.addGreaterOrEqualThan(StudentAttendance.COL_DATE, getParameter(START_DATE_PARAM));
         criteria.addLessOrEqualThan(StudentAttendance.COL_DATE, getParameter(END_DATE_PARAM));
+        criteria.addNotEqualTo(SisBeanPaths.STUDENT_ATTENDANCE.field().A002(), "false");
        
         ReportQueryByCriteria query = new ReportQueryByCriteria(StudentAttendance.class,
                 new String[] {
