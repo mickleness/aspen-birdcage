@@ -36,6 +36,8 @@ import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.regex.Pattern;
 
+import org.abc.tools.Tool;
+
 import com.follett.cust.io.CsvFormat;
 import com.follett.cust.io.OidEncoder;
 import com.follett.cust.io.exporter.RowExporter;
@@ -145,6 +147,7 @@ import com.x2dev.utils.types.PlainDate;
  *
  * @author Follett School Solutions
  */
+@Tool(id = "ABC-ONE-ROS", name = "One Roster CSV Export (Birdcage)", type = "export")
 public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 	/**
