@@ -1,4 +1,4 @@
-// Catalog Creation Date : 03-24-2020
+// Catalog Creation Date : 04-17-2018
 /*
  * ====================================================================
  *
@@ -10,7 +10,7 @@
  * ====================================================================
  */
 
-package org.abc.tools.exports;
+package com.x2dev.reports.portable;
 
 import java.io.Closeable;
 import java.io.OutputStream;
@@ -28,7 +28,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -94,18 +93,6 @@ import com.x2dev.utils.X2BaseException;
 import com.x2dev.utils.types.PlainDate;
 
 /**
- * This is modified from Aspen's original
- * com.x2dev.reports.portable.OneRosterExport_1_1 implementation as follows:
- * <ul>
- * <li>This export supports identifying non-primary teachers.</li>
- * <li>This export supports the "periods" column in classes.csv.</li>
- * <li>This export supports a "Schools to Exclude" input parameter.</li>
- * <li>Misc minor bug fixes</li>
- * </ul>
- * <p>
- * See:
- * https://github.com/mickleness/aspen-birdcage/wiki/Birdcage-One-Roster-CSV-Export
- * <p>
  * This produces a zip archive of csv files that comply with the
  * <a href="https://www.imsglobal.org/oneroster-v11-final-csv-tables">One Roster
  * CSV v1.1 specification</a>.
@@ -114,13 +101,6 @@ import com.x2dev.utils.types.PlainDate;
  *
  * <pre>
  *     &lt;tool-input allow-school-select="true" district-support="true" allow-year-select="true">
- *         &lt;input name="excludedSchoolOids" data-type="string" display-type="picklist" display-name="Schools to Exclude" required="false">
- *             &lt;picklist field-id="sklSchoolName" multiple="true" required="false" >
- *                 &lt;field id="sklSchoolName" sort="true" />
- *                 &lt;field id="sklSchoolID" />
- *                 &lt;field id="sklInactiveInd" />
- *             &lt;/picklist>
- *         &lt;/input>
  *         &lt;input name="includeContacts" data-type="boolean" display-type="checkbox"
  *             display-name="Include Student Contacts" default-value="true" required="false" />
  *         &lt;input name="includeGrades" data-type="boolean" display-type="checkbox"
@@ -145,7 +125,9 @@ import com.x2dev.utils.types.PlainDate;
  *
  * @author Follett School Solutions
  */
-public class OneRosterExport_1_1_Birdcage extends ExportArbor {
+public class OneRosterExport_1_1 extends ExportArbor {
+
+	private static final String NO_PERFMON4J_INSTRUMENTATION = "";
 
 	/**
 	 * This exception is thrown when we create too many beans and we want to
@@ -160,11 +142,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 			super(msg);
 		}
 	}
-
-	/**
-	 * Disables PERFMON4J monitoring See T30502294
-	 */
-	private static final String NO_PERFMON4J_INSTRUMENTATION = "";
 
 	/**
 	 * Given a series of columns for this ScheduleTerm, return the longest one
@@ -248,12 +225,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 	 * total amount of millions of records limit
 	 */
 	protected static final String PARAM_LIMIT = "maxMillionsOfRecords";
-
-	/**
-	 * This optional parameter maps to a comma-separated list of school oids to
-	 * skip.
-	 */
-	protected static final String PARAM_EXCLUDED_SCHOOLS = "excludedSchoolOids";
 
 	/**
 	 * This helper catalogs how often different errors occurred, and includes a
@@ -629,7 +600,7 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		while (as != null) {
 			ThreadUtils.checkInterrupt();
 
-			if ("schoolYear".equals(as.getType().name())) {
+			if ("schoolYear".equals(as.getType())) {
 				return as.getSourcedId();
 			}
 
@@ -646,7 +617,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 	Map<BeanId, OneRosterBean> m_allBeans = new HashMap<>();
 	FieldValidationExceptionHandler m_exceptionHandler;
-	Collection<String> unresolvedGradeLevels = new TreeSet<>();
 
 	public static final OidEncoder OID_ENCODER = new OidEncoder(true, true,
 			true);
@@ -704,10 +674,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 			"Ongoing Social Worke", "Self", "Social Worker", "Student",
 			"Surrogate");
 
-	private List<String> barglist = Arrays.asList("Administration",
-			"Facilities", "Food Service", "Nurses", "Administration", "Other",
-			"Secretarial", "TA/EA", "Teachers");
-
 	/**
 	 * The last timestamp when a UserToolDetail message was updated.
 	 */
@@ -719,6 +685,33 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 			"Sister", "Step Father", "Step Mother", "Uncle");
 
 	protected boolean m_strictFieldValidation;
+
+	private BeanColumnPath m_stdOid;
+	private BeanColumnPath m_stdNameView;
+	private BeanColumnPath m_stdPsnEmail;
+	private BeanColumnPath m_stdPsnLastName;
+	private BeanColumnPath m_stdPsnMiddleName;
+	private BeanColumnPath m_stdPsnFirstName;
+	private BeanColumnPath m_stdPsnPhone;
+	private BeanColumnPath m_stdPsnUsrLogin;
+	private BeanColumnPath m_stdLocalId;
+	private BeanColumnPath m_stdStateId;
+	private BeanColumnPath m_stdSklOid;
+	private BeanColumnPath m_stdGradeLevel;
+	private BeanColumnPath m_stdEnrStatus;
+	private BeanColumnPath m_stdPsnDob;
+	private BeanColumnPath m_stdPsnGenderCode;
+
+	private BeanColumnPath m_ctjOid;
+	private BeanColumnPath m_ctjRelationship;
+	private BeanColumnPath m_ctjPsnEmail;
+	private BeanColumnPath m_ctjPsnLastName;
+	private BeanColumnPath m_ctjPsnMiddleName;
+	private BeanColumnPath m_ctjPsnFirstName;
+	private BeanColumnPath m_ctjPsnPhone;
+	private BeanColumnPath m_ctjPsnDob;
+	private BeanColumnPath m_ctjPsnGenderCode;
+	private BeanColumnPath m_ctjPsnUsrLogin;
 
 	/**
 	 * Append an incoming grid to a master grid. Each row has a new key/value
@@ -737,6 +730,52 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		for (Map<String, Object> row : incomingGrid.getRows()) {
 			row.put(KEY_ENTRY_NAME, incomingName);
 			masterGrid.append(row);
+		}
+	}
+
+	/**
+	 * Create all the OneRosterBeans and store them in m_allBeans.
+	 *
+	 * @throws RecordLimitException
+	 *
+	 * @throws Exception
+	 */
+	protected void buildBeans() throws RecordLimitException {
+		boolean includeGrades = !Boolean.FALSE
+				.equals(getParameter(PARAM_INCLUDE_GRADES));
+
+		int orgCount = createOrganizations();
+		logToolMessage(Level.INFO,
+				"Logged " + NumberFormat.getInstance().format(orgCount)
+						+ " Organizations.",
+				false);
+		int academicSessionCount = createAcademicSessions();
+		logToolMessage(Level.INFO,
+				"Logged " + NumberFormat.getInstance()
+						.format(academicSessionCount) + " Academic Sessions.",
+				false);
+		int userCount = createUsers();
+		logToolMessage(Level.INFO, "Logged "
+				+ NumberFormat.getInstance().format(userCount) + " Users.",
+				false);
+		int enrollmentCount = createEnrollments();
+		logToolMessage(Level.INFO,
+				"Logged " + NumberFormat.getInstance().format(enrollmentCount)
+						+ " Enrollments.",
+				false);
+
+		if (includeGrades) {
+			int lineItemCount = createLineItems();
+			logToolMessage(Level.INFO,
+					"Logged " + NumberFormat.getInstance().format(lineItemCount)
+							+ " LineItems.",
+					false);
+
+			int resultCount = createResults();
+			logToolMessage(Level.INFO,
+					"Logged " + NumberFormat.getInstance().format(resultCount)
+							+ " Results.",
+					false);
 		}
 	}
 
@@ -809,6 +848,9 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 						.next(SisBeanPaths.SCHEDULE.oid());
 				Collection<ScheduleTerm> terms = new TreeSet<>(OID_COMPARATOR);
 				for (RowResult<Schedule> result : results) {
+					// this cast is required for backwards compatibility. Maybe
+					// remove in 2019?
+					@SuppressWarnings("cast")
 					ScheduleTerm term = (ScheduleTerm) result
 							.getBean(SisBeanPaths.SCHEDULE.scheduleTerms());
 					if (term != null) {
@@ -930,11 +972,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 			criteria.addEqualTo(SisBeanPaths.STUDENT_SCHEDULE.student().school()
 					.oid().toString(), schoolOid);
 		}
-		List<String> excludedSchools = getExludedSchoolOids();
-		if (!excludedSchools.isEmpty()) {
-			criteria.addNotIn(SisBeanPaths.STUDENT_SCHEDULE.student().school()
-					.oid().toString(), excludedSchools);
-		}
 		String contextOid = (String) getParameter(PARAM_CONTEXT_OID);
 		if (!StringUtils.isBlank(contextOid)) {
 			criteria.addEqualTo(SisBeanPaths.STUDENT_SCHEDULE.schedule()
@@ -967,37 +1004,12 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 				.roomView();
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
-
-		BeanColumnPath mstScheduleDisplay = SisBeanPaths.STUDENT_SCHEDULE
-				.section().scheduleDisplay();
-
-		// we populate teacher enrollments two different ways.
-		// #1: The MST record includes a "primaryStaff" relationship. This is
-		// what we used for several years, until some users on a mailing list
-		// pointed out they needed coteachers (nonprimary) teachers too.
-		// #2: So we added teachers from the MTC records too.
-
-		// Theoretically the second case is all we ever need. Probably. But that
-		// assumes the MTC table is perfectly maintained. Just in case it's not:
-		// let's continue to poll both pieces of info. So with this new revision
-		// we shouldn't risk *losing* any data, we should only ever add data.
-
-		BeanColumnPath mstStfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
+		BeanColumnPath stfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.primaryStaff().oid();
-		BeanColumnPath mstStfLocalId = SisBeanPaths.STUDENT_SCHEDULE.section()
+		BeanColumnPath stfLocalId = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.primaryStaff().localId();
-		BeanColumnPath mstStfStateId = SisBeanPaths.STUDENT_SCHEDULE.section()
+		BeanColumnPath stfStateId = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.primaryStaff().stateId();
-
-		BeanColumnPath mtcStfPrimaryIndicator = SisBeanPaths.STUDENT_SCHEDULE
-				.section().teacherSections().primaryTeacherIndicator();
-		BeanColumnPath mtcStfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.teacherSections().staffOid();
-		BeanColumnPath mtcStfLocalId = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.teacherSections().staff().localId();
-		BeanColumnPath mtcStfStateId = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.teacherSections().staff().stateId();
-
 		BeanColumnPath stdNameView = SisBeanPaths.STUDENT_SCHEDULE.student()
 				.nameView();
 
@@ -1014,15 +1026,10 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		builder.addColumn(mstCourseView);
 		builder.addColumn(mstRoomView);
 		builder.addColumn(cskCourseNumber);
-		builder.addColumn(mtcStfPrimaryIndicator);
-		builder.addColumn(mtcStfOid);
-		builder.addColumn(mtcStfLocalId);
-		builder.addColumn(mtcStfStateId);
-		builder.addColumn(mstStfOid);
-		builder.addColumn(mstStfLocalId);
-		builder.addColumn(mstStfStateId);
+		builder.addColumn(stfOid);
+		builder.addColumn(stfLocalId);
+		builder.addColumn(stfStateId);
 		builder.addColumn(stdNameView);
-		builder.addColumn(mstScheduleDisplay);
 
 		try (RowResult.Iterator<StudentSchedule> iter = builder
 				.createIterator(getBroker(), criteria)) {
@@ -1046,15 +1053,10 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 							null, null);
 					String classTitle = (String) row
 							.getValue(cskCourseDescription);
-
-					String crsGradeLevelValue = (String) row
-							.getValue(crsGradeLevel);
-					GradeLevel grade = getGradeLevel(crsGradeLevelValue);
-
+					GradeLevel grade = getGradeLevel(
+							(String) row.getValue(crsGradeLevel));
 					String location = (String) row.getValue(mstRoomView);
 					String courseCode = (String) row.getValue(cskCourseNumber);
-					String scheduleDisplay = (String) row
-							.getValue(mstScheduleDisplay);
 
 					// TO-DO: class type can "scheduled" or "homeroom": how do
 					// we detect homerooms?
@@ -1066,8 +1068,9 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 					String schoolYearId = getSchoolYearId(
 							(String) row.getValue(trmOid));
-
-					List<OneRosterBean> beansToSave = new LinkedList<>();
+					String staff = (String) row.getValue(stfOid);
+					String staffLocalId = (String) row.getValue(stfLocalId);
+					String staffStateId = (String) row.getValue(stfStateId);
 
 					Enrollment enrollment = new Enrollment(enrollmentUid);
 					enrollment.setUserSourcedId(studentUid);
@@ -1075,7 +1078,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 					enrollment.setClassSourcedId(classUid);
 					enrollment.setPrimary(Boolean.FALSE);
 					enrollment.setRole(RoleType.STUDENT);
-					beansToSave.add(enrollment);
 
 					com.follett.cust.io.exporter.oneroster.v1_1.Class c = new com.follett.cust.io.exporter.oneroster.v1_1.Class(
 							classUid);
@@ -1090,16 +1092,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 					c.setClassCode(classCode);
 					c.setLocation(location);
 					c.setSubjects(subjects);
-					if (scheduleDisplay != null) {
-						// this should be something like: "D(1,4) E(1,3-4,6)"
-						// I'm nervous the comma might screw up some 3rd party
-						// parsers ... but we'll cross that bridge when someone
-						// brings it up.
-						String[] periods = scheduleDisplay.split(" ");
-						c.setPeriods(Arrays.asList(periods));
-					}
-
-					beansToSave.add(c);
 
 					Course course = new Course(courseUid);
 					course.setOrgSourcedId(orgUid);
@@ -1108,61 +1100,28 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 					course.setCourseCode(courseCode);
 					course.setGrades(asList(grade));
 					course.setSubjects(subjects);
-					beansToSave.add(course);
 
-					class StaffDescription {
-						String staffOid, staffLocalId, staffStateId;
-						Boolean isPrimary;
+					String staffUser = createUid(staff, staffLocalId,
+							staffStateId);
+
+					boolean skipStaffBean = staffUser == null;
+					String staffEnrollmentUid = createUid(
+							(String) row.getValue(mstOid), null, null) + "_"
+							+ staffUser;
+					Enrollment staffEnrollment = new Enrollment(
+							staffEnrollmentUid);
+					staffEnrollment.setUserSourcedId(staffUser);
+					staffEnrollment.setSchoolSourcedId(orgUid);
+					staffEnrollment.setClassSourcedId(classUid);
+					staffEnrollment.setPrimary(Boolean.TRUE);
+					staffEnrollment.setRole(RoleType.TEACHER);
+
+					if (!skipStaffBean) {
+						saveBean(row, false, enrollment, c, course,
+								staffEnrollment);
+					} else {
+						saveBean(row, false, enrollment, c, course);
 					}
-
-					StaffDescription description1 = new StaffDescription();
-					StaffDescription description2 = new StaffDescription();
-
-					description1.staffOid = (String) row.getValue(mtcStfOid);
-					description1.staffLocalId = (String) row
-							.getValue(mtcStfLocalId);
-					description1.staffStateId = (String) row
-							.getValue(mtcStfStateId);
-					description1.isPrimary = (Boolean) row
-							.getValue(mtcStfPrimaryIndicator);
-
-					description2.staffOid = (String) row.getValue(mstStfOid);
-					description2.staffLocalId = (String) row
-							.getValue(mstStfLocalId);
-					description2.staffStateId = (String) row
-							.getValue(mstStfStateId);
-
-					// the "mstStf" fields came from a relationship labeled
-					// "primaryStaff", so it's safe to assume "isPrimary" should
-					// always be true.
-					description2.isPrimary = Boolean.TRUE;
-
-					for (StaffDescription description : new StaffDescription[] {
-							description1, description2 }) {
-
-						String staffUser = createUid(description.staffOid,
-								description.staffLocalId,
-								description.staffStateId);
-
-						boolean skipStaffBean = staffUser == null;
-						if (!skipStaffBean) {
-							String staffEnrollmentUid = createUid(
-									(String) row.getValue(mstOid), null, null)
-									+ "_" + staffUser;
-							Enrollment staffEnrollment = new Enrollment(
-									staffEnrollmentUid);
-							staffEnrollment.setUserSourcedId(staffUser);
-							staffEnrollment.setSchoolSourcedId(orgUid);
-							staffEnrollment.setClassSourcedId(classUid);
-							staffEnrollment.setPrimary(description.isPrimary);
-							staffEnrollment.setRole(RoleType.TEACHER);
-
-							beansToSave.add(staffEnrollment);
-						}
-					}
-
-					saveBean(row, false,
-							beansToSave.toArray(new OneRosterBean[0]));
 					ctr++;
 				} catch (RuntimeException e) {
 					m_exceptionHandler.handleRuntimeException(e);
@@ -1178,39 +1137,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		}
 
 		return ctr;
-	}
-
-	/**
-	 * Identify the GradeLevel enum for a given String.
-	 */
-	private GradeLevel getGradeLevel(String gradeLevelStr) {
-		// GradeLevel.get(String) does an OK job, but over time we found
-		// there are some more cases we need to catch. (And I no longer
-		// have access to the customizations jar where GradeLevel.java
-		// lives, so I can't update that method.)
-
-		GradeLevel returnValue = GradeLevel.get(gradeLevelStr);
-		if (returnValue == null) {
-			if ("Grade 1".equalsIgnoreCase(gradeLevelStr)) {
-				returnValue = GradeLevel.G01;
-			} else if ("Grade 2".equalsIgnoreCase(gradeLevelStr)) {
-				returnValue = GradeLevel.G02;
-			} else if ("Grade 3".equalsIgnoreCase(gradeLevelStr)) {
-				returnValue = GradeLevel.G03;
-			} else if ("Grade 4".equalsIgnoreCase(gradeLevelStr)) {
-				returnValue = GradeLevel.G04;
-			} else if ("Grade 5".equalsIgnoreCase(gradeLevelStr)) {
-				returnValue = GradeLevel.G05;
-			} else if ("KF".equalsIgnoreCase(gradeLevelStr)
-					|| "Kindergarten".equalsIgnoreCase(gradeLevelStr)) {
-				returnValue = GradeLevel.KG;
-			}
-		}
-		if (returnValue == null) {
-			unresolvedGradeLevels.add(String.valueOf(gradeLevelStr));
-			returnValue = GradeLevel.OTHER;
-		}
-		return returnValue;
 	}
 
 	protected int createLineItems() throws RecordLimitException {
@@ -1259,13 +1185,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 			criteria.addEqualTo(SisBeanPaths.GRADEBOOK_COLUMN_DEFINITION
 					.masterSchedule().schedule().school().oid().toString(),
 					schoolOid);
-		}
-		List<String> excludedSchools = getExludedSchoolOids();
-		if (!excludedSchools.isEmpty()) {
-			criteria.addNotIn(
-					SisBeanPaths.GRADEBOOK_COLUMN_DEFINITION.masterSchedule()
-							.schedule().school().oid().toString(),
-					excludedSchools);
 		}
 		String contextOid = (String) getParameter(PARAM_CONTEXT_OID);
 		if (!StringUtils.isBlank(contextOid)) {
@@ -1467,12 +1386,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 					.masterSchedule().schedule().school().oid().toString(),
 					schoolOid);
 		}
-		List<String> excludedSchools = getExludedSchoolOids();
-		if (!excludedSchools.isEmpty()) {
-			criteria.addNotIn(SisBeanPaths.GRADEBOOK_SCORE.columnDefinition()
-					.masterSchedule().schedule().school().oid().toString(),
-					excludedSchools);
-		}
 		String contextOid = (String) getParameter(PARAM_CONTEXT_OID);
 		if (!StringUtils.isBlank(contextOid)) {
 			criteria.addEqualTo(SisBeanPaths.GRADEBOOK_SCORE.columnDefinition()
@@ -1600,128 +1513,70 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 						SisBeanPaths.STUDENT.school().oid().toString(),
 						schoolOid);
 			}
-			List<String> excludedSchools = getExludedSchoolOids();
-			if (!excludedSchools.isEmpty()) {
-				criteria.addNotIn(
-						SisBeanPaths.STUDENT.school().oid().toString(),
-						excludedSchools);
-			}
 			criteria.addAndCriteria(
 					StudentManager.getActiveStudentStatusCriteria(
 							OrganizationManager
 									.getRootOrganization(getBroker()),
 							SisStudent.COL_ENROLLMENT_STATUS));
 
-			BeanColumnPath stdOid = SisBeanPaths.STUDENT.oid();
-			BeanColumnPath stdNameView = SisBeanPaths.STUDENT.nameView();
-			BeanColumnPath stdPsnEmail = SisBeanPaths.STUDENT.person()
-					.email01();
-			BeanColumnPath stdPsnLastName = SisBeanPaths.STUDENT.person()
-					.lastName();
-			BeanColumnPath stdPsnMiddleName = SisBeanPaths.STUDENT.person()
-					.middleName();
-			BeanColumnPath stdPsnFirstName = SisBeanPaths.STUDENT.person()
-					.firstName();
-			BeanColumnPath stdPsnPhone = SisBeanPaths.STUDENT.person()
-					.phone01();
-			BeanColumnPath stdPsnUsrLogin = SisBeanPaths.STUDENT.person().user()
-					.loginName();
-			BeanColumnPath stdLocalId = SisBeanPaths.STUDENT.localId();
-			BeanColumnPath stdStateId = SisBeanPaths.STUDENT.stateId();
-			BeanColumnPath stdSklOid = SisBeanPaths.STUDENT.schoolOid();
-			BeanColumnPath stdEnrStatus = SisBeanPaths.STUDENT
-					.enrollmentStatus();
-			BeanColumnPath stdPsnDob = SisBeanPaths.STUDENT.person().dob();
-			BeanColumnPath stdPsnGenderCode = SisBeanPaths.STUDENT.person()
-					.genderCode();
-			BeanColumnPath stdGradeLevel = SisBeanPaths.STUDENT.gradeLevel();
-
-			BeanColumnPath ctjOid = SisBeanPaths.STUDENT.contacts().oid();
-			BeanColumnPath ctjRelationship = SisBeanPaths.STUDENT.contacts()
-					.relationshipCode();
-			BeanColumnPath ctjPsnEmail = SisBeanPaths.STUDENT.contacts()
-					.contact().person().email01();
-			BeanColumnPath ctjPsnLastName = SisBeanPaths.STUDENT.contacts()
-					.contact().person().lastName();
-			BeanColumnPath ctjPsnMiddleName = SisBeanPaths.STUDENT.contacts()
-					.contact().person().middleName();
-			BeanColumnPath ctjPsnFirstName = SisBeanPaths.STUDENT.contacts()
-					.contact().person().firstName();
-			BeanColumnPath ctjPsnPhone = SisBeanPaths.STUDENT.contacts()
-					.contact().person().phone01();
-			BeanColumnPath ctjPsnDob = SisBeanPaths.STUDENT.contacts().contact()
-					.person().dob();
-			BeanColumnPath ctjPsnGenderCode = SisBeanPaths.STUDENT.contacts()
-					.contact().person().genderCode();
-			BeanColumnPath ctjPsnUsrLogin = SisBeanPaths.STUDENT.contacts()
-					.contact().person().user().loginName();
-
 			RowResult.IteratorBuilder<SisStudent> builder = new RowResult.IteratorBuilder<>(
 					getBroker().getPersistenceKey(), SisStudent.class);
-			builder.addColumn(stdOid);
-			builder.addColumn(stdGradeLevel);
-			builder.addColumn(stdNameView);
-			builder.addColumn(stdPsnEmail);
-			builder.addColumn(stdPsnLastName);
-			builder.addColumn(stdPsnMiddleName);
-			builder.addColumn(stdPsnFirstName);
-			builder.addColumn(stdPsnPhone);
-			builder.addColumn(stdPsnUsrLogin);
-			builder.addColumn(stdPsnDob);
-			builder.addColumn(stdPsnGenderCode);
-			builder.addColumn(stdLocalId);
-			builder.addColumn(stdStateId);
-			builder.addColumn(stdSklOid);
-			builder.addColumn(stdEnrStatus);
 
-			if (includeContacts) {
-				builder.addColumn(ctjOid);
-				builder.addColumn(ctjRelationship);
-				builder.addColumn(ctjPsnEmail);
-				builder.addColumn(ctjPsnLastName);
-				builder.addColumn(ctjPsnFirstName);
-				builder.addColumn(ctjPsnPhone);
-				builder.addColumn(ctjPsnUsrLogin);
+			Collection<BeanColumnPath> studentPaths = getStudentAndContactsColumns();
+			for (BeanColumnPath bcp : studentPaths) {
+				try {
+					boolean isContact = bcp.toString().startsWith(
+							SisBeanPaths.STUDENT.contacts().toString());
+					if (isContact) {
+						if (includeContacts) {
+							builder.addColumn(bcp);
+						}
+					} else {
+						builder.addColumn(bcp);
+					}
+				} catch (RuntimeException e) {
+					throw e;
+				}
 			}
-			builder.addOrderBy(stdOid, true);
+
+			builder.addOrderBy(m_stdOid, true);
 
 			try (RowResult.Iterator<SisStudent> iter = builder
 					.createIterator(getBroker(), criteria)) {
 				while (iter.hasNext()) {
 					Collection<RowResult<SisStudent>> results = iter
-							.next(stdOid);
+							.next(m_stdOid);
 					RowResult<SisStudent> result = results.iterator().next();
 					String nameView = (String) result
 							.getValue(SisBeanPaths.STUDENT.nameView());
 
 					try {
-						String studentOid = (String) result.getValue(stdOid);
-						String email = (String) result.getValue(stdPsnEmail);
+						String studentOid = (String) result.getValue(m_stdOid);
+						String email = (String) result.getValue(m_stdPsnEmail);
 						String familyName = (String) result
-								.getValue(stdPsnLastName);
+								.getValue(m_stdPsnLastName);
 						String middleName = (String) result
-								.getValue(stdPsnMiddleName);
+								.getValue(m_stdPsnMiddleName);
 						String givenName = (String) result
-								.getValue(stdPsnFirstName);
+								.getValue(m_stdPsnFirstName);
 						String identifier = (String) result
-								.getValue(stdLocalId);
-						String phone = (String) result.getValue(stdPsnPhone);
+								.getValue(m_stdLocalId);
+						String phone = (String) result.getValue(m_stdPsnPhone);
 						String username = (String) result
-								.getValue(stdPsnUsrLogin);
+								.getValue(m_stdPsnUsrLogin);
 						String stdSchoolOid = (String) result
-								.getValue(stdSklOid);
-						String stdGradeLevelValue = (String) result
-								.getValue(stdGradeLevel);
-						GradeLevel grade = getGradeLevel(stdGradeLevelValue);
+								.getValue(m_stdSklOid);
+						GradeLevel grade = getGradeLevel(
+								(String) result.getValue(m_stdGradeLevel));
 
 						Boolean enabledUser = Boolean
 								.valueOf(StudentManager.isActiveStudent(
 										getOrganization(), (String) result
-												.getValue(stdEnrStatus)));
+												.getValue(m_stdEnrStatus)));
 
 						String uid = createUid(studentOid,
-								(String) result.getValue(stdLocalId),
-								(String) result.getValue(stdStateId));
+								(String) result.getValue(m_stdLocalId),
+								(String) result.getValue(m_stdStateId));
 						User user = new User(uid);
 
 						if (grade != null) {
@@ -1743,29 +1598,29 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 						ctr++;
 						saveBean(result, true, user);
 						saveUserDemographic(user,
-								(Date) result.getValue(stdPsnDob),
-								(String) result.getValue(stdPsnGenderCode));
+								(Date) result.getValue(m_stdPsnDob),
+								(String) result.getValue(m_stdPsnGenderCode));
 
 						for (RowResult<SisStudent> contact : results) {
 							try {
 								String contactOid = (String) contact
-										.getValue(ctjOid);
+										.getValue(m_ctjOid);
 								if (contactOid != null) {
 
 									email = (String) contact
-											.getValue(ctjPsnEmail);
+											.getValue(m_ctjPsnEmail);
 									familyName = (String) contact
-											.getValue(ctjPsnLastName);
+											.getValue(m_ctjPsnLastName);
 									middleName = (String) contact
-											.getValue(ctjPsnMiddleName);
+											.getValue(m_ctjPsnMiddleName);
 									givenName = (String) contact
-											.getValue(ctjPsnFirstName);
+											.getValue(m_ctjPsnFirstName);
 									identifier = (String) contact
-											.getValue(ctjRelationship);
+											.getValue(m_ctjRelationship);
 									phone = (String) contact
-											.getValue(ctjPsnPhone);
+											.getValue(m_ctjPsnPhone);
 									username = (String) contact
-											.getValue(ctjPsnUsrLogin);
+											.getValue(m_ctjPsnUsrLogin);
 
 									String contactUid = createUid(contactOid,
 											null, null);
@@ -1804,9 +1659,9 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 									addAgent(contactUser, uid);
 
 									saveUserDemographic(contactUser,
-											(Date) result.getValue(ctjPsnDob),
+											(Date) result.getValue(m_ctjPsnDob),
 											(String) result.getValue(
-													ctjPsnGenderCode));
+													m_ctjPsnGenderCode));
 								}
 							} catch (RuntimeException e) {
 								m_exceptionHandler.handleRuntimeException(e);
@@ -1835,18 +1690,11 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 			String schoolOid = (String) getParameter(PARAM_SCHOOL_OID);
 			if (!StringUtils.isBlank(schoolOid)) {
 				criteria.addEqualTo(
-						SisBeanPaths.STAFF.school().oid().toString(),
+						SisBeanPaths.STUDENT.school().oid().toString(),
 						schoolOid);
-			}
-			List<String> excludedSchools = getExludedSchoolOids();
-			if (!excludedSchools.isEmpty()) {
-				criteria.addNotIn(SisBeanPaths.STAFF.school().oid().toString(),
-						excludedSchools);
 			}
 			criteria.addEqualTo(SisBeanPaths.STAFF.status().toString(),
 					activeStatus);
-			criteria.addIn(SisBeanPaths.STAFF.bargainingUnit().toString(),
-					barglist);
 
 			RowResult.IteratorBuilder<SisStaff> builder = new RowResult.IteratorBuilder<>(
 					getBroker().getPersistenceKey(), SisStaff.class);
@@ -1915,9 +1763,10 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 						if (role == null) {
 							// assume if we haven't flagged a staff as anything
-							// else that we'll call them a teacher. Teachers
-							// who aren't connected to any enrollment records
-							// are dropped at the end of this export
+							// else that we'll call
+							// them a teacher. Teachers who aren't collected to
+							// any enrollment
+							// records are dropped at the end of this export
 							role = RoleType.TEACHER;
 						}
 
@@ -1952,6 +1801,23 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		return ctr;
 	}
 
+	/**
+	 * Return a collection of columns to retrieve from the STUDENT table,
+	 * including "student.contacts.*" paths to enumerate contacts.
+	 *
+	 * @return a collection of columns to retrieve from the STUDENT table.
+	 */
+	protected Collection<BeanColumnPath> getStudentAndContactsColumns() {
+		return new ArrayList<>(Arrays.asList(m_stdOid, m_stdNameView,
+				m_stdPsnEmail, m_stdPsnLastName, m_stdPsnMiddleName,
+				m_stdPsnFirstName, m_stdPsnPhone, m_stdPsnUsrLogin, m_stdPsnDob,
+				m_stdPsnGenderCode, m_stdLocalId, m_stdStateId, m_stdSklOid,
+				m_stdGradeLevel, m_stdEnrStatus, m_ctjOid, m_ctjRelationship,
+				m_ctjPsnEmail, m_ctjPsnLastName, m_ctjPsnDob,
+				m_ctjPsnGenderCode, m_ctjPsnMiddleName, m_ctjPsnFirstName,
+				m_ctjPsnPhone, m_ctjPsnUsrLogin));
+	}
+
 	@Override
 	protected RowExporter[] getRowExporters(OutputStream out,
 			boolean includeAdjacentFile) throws Exception {
@@ -1964,58 +1830,9 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 	@Override
 	protected DataGrid gatherData() throws Exception {
 		try {
+			buildBeans();
+
 			DataGrid masterGrid = new DataGrid();
-
-			boolean includeGrades = !Boolean.FALSE
-					.equals(getParameter(PARAM_INCLUDE_GRADES));
-
-			// First we create several beans, then we validate and prune them.
-
-			int orgCount = createOrganizations();
-			logToolMessage(Level.INFO,
-					"Logged " + NumberFormat.getInstance().format(orgCount)
-							+ " Organizations.",
-					false);
-			int academicSessionCount = createAcademicSessions();
-			logToolMessage(Level.INFO,
-					"Logged "
-							+ NumberFormat.getInstance()
-									.format(academicSessionCount)
-							+ " Academic Sessions.",
-					false);
-			int userCount = createUsers();
-			logToolMessage(Level.INFO, "Logged "
-					+ NumberFormat.getInstance().format(userCount) + " Users.",
-					false);
-			int enrollmentCount = createEnrollments();
-			logToolMessage(Level.INFO,
-					"Logged "
-							+ NumberFormat.getInstance().format(enrollmentCount)
-							+ " Enrollments.",
-					false);
-
-			if (includeGrades) {
-				int lineItemCount = createLineItems();
-				logToolMessage(Level.INFO, "Logged "
-						+ NumberFormat.getInstance().format(lineItemCount)
-						+ " LineItems.", false);
-
-				int resultCount = createResults();
-				logToolMessage(Level.INFO,
-						"Logged "
-								+ NumberFormat.getInstance().format(resultCount)
-								+ " Results.",
-						false);
-			}
-
-			if (!unresolvedGradeLevels.isEmpty()) {
-				logToolMessage(Level.INFO,
-						"The following grade levels are unresolved: "
-								+ unresolvedGradeLevels
-								+ "\n\nThis means these values were identified in COURSE and STUDENT records in Aspen, but this export was unable to convert those to One Roster's specifications.",
-						false);
-			}
-
 			boolean repeat;
 			do {
 				repeat = false;
@@ -2137,23 +1954,6 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		return FileType.CSV_ZIP;
 	}
 
-	protected List<String> getExludedSchoolOids() {
-		// this is wordier than it needs to be, but I forget how exactly params
-		// are encoded:
-		String str = (String) getParameter(PARAM_EXCLUDED_SCHOOLS);
-		if (str != null)
-			str = str.trim();
-		if (str == null || str.isEmpty())
-			return Collections.EMPTY_LIST;
-		List<String> returnValue = new LinkedList<>();
-		for (String k : str.split(",")) {
-			k = k.trim();
-			if (!k.isEmpty())
-				returnValue.add(k);
-		}
-		return returnValue;
-	}
-
 	/**
 	 * Given an Aspen relationship code, this identifies the appropriate One
 	 * Roster role value.
@@ -2186,6 +1986,41 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 
 	@Override
 	protected void initialize() throws X2BaseException {
+		m_stdOid = SisBeanPaths.STUDENT.oid();
+		m_stdNameView = SisBeanPaths.STUDENT.nameView();
+		m_stdPsnEmail = SisBeanPaths.STUDENT.person().email01();
+		m_stdPsnLastName = SisBeanPaths.STUDENT.person().lastName();
+		m_stdPsnMiddleName = SisBeanPaths.STUDENT.person().middleName();
+		m_stdPsnFirstName = SisBeanPaths.STUDENT.person().firstName();
+		m_stdPsnPhone = SisBeanPaths.STUDENT.person().phone01();
+		// m_stdPsnUsrLogin = SisBeanPaths.STUDENT.person().user().loginName();
+		m_stdPsnUsrLogin = SisBeanPaths.STUDENT.field().B031();
+		m_stdLocalId = SisBeanPaths.STUDENT.localId();
+		m_stdStateId = SisBeanPaths.STUDENT.stateId();
+		m_stdSklOid = SisBeanPaths.STUDENT.schoolOid();
+		m_stdGradeLevel = SisBeanPaths.STUDENT.gradeLevel();
+		m_stdEnrStatus = SisBeanPaths.STUDENT.enrollmentStatus();
+		m_stdPsnDob = SisBeanPaths.STUDENT.person().dob();
+		m_stdPsnGenderCode = SisBeanPaths.STUDENT.person().genderCode();
+
+		m_ctjOid = SisBeanPaths.STUDENT.contacts().oid();
+		m_ctjRelationship = SisBeanPaths.STUDENT.contacts().relationshipCode();
+		m_ctjPsnEmail = SisBeanPaths.STUDENT.contacts().contact().person()
+				.email01();
+		m_ctjPsnLastName = SisBeanPaths.STUDENT.contacts().contact().person()
+				.lastName();
+		m_ctjPsnMiddleName = SisBeanPaths.STUDENT.contacts().contact().person()
+				.middleName();
+		m_ctjPsnFirstName = SisBeanPaths.STUDENT.contacts().contact().person()
+				.firstName();
+		m_ctjPsnDob = SisBeanPaths.STUDENT.contacts().contact().person().dob();
+		m_ctjPsnGenderCode = SisBeanPaths.STUDENT.contacts().contact().person()
+				.genderCode();
+		m_ctjPsnPhone = SisBeanPaths.STUDENT.contacts().contact().person()
+				.phone01();
+		m_ctjPsnUsrLogin = SisBeanPaths.STUDENT.contacts().contact().person()
+				.user().loginName();
+
 		m_breakCriteria = KEY_ENTRY_NAME;
 		m_strictFieldValidation = Boolean.TRUE
 				.equals(getParameter(PARAM_STRICT_FIELD_VALIDATION));
@@ -2456,8 +2291,7 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 				if (bean instanceof User) {
 					RoleType role = ((User) bean).getRole();
 					if (RoleType.ADMINISTRATOR == role || RoleType.AIDE == role
-							|| RoleType.PROCTOR == role
-							|| RoleType.TEACHER == role) {
+							|| RoleType.PROCTOR == role) {
 						continue;
 					}
 				}
@@ -2609,6 +2443,23 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 		}
 		orgs.add(schoolId);
 		user.setOrgSourcedIds(orgs);
+	}
+
+	/**
+	 * Return the GradeLevel associated with a String.
+	 *
+	 * @param gradeLevel
+	 *            a text representation of a GradeLevel.
+	 * @return a GradeLevel, or null if the argument isn't recognized.
+	 */
+	private GradeLevel getGradeLevel(String gradeLevel) {
+		// TODO: we can remove this method later; we're trying to push this
+		// out quickly and Jenkins is currently broken.
+		if ("K".equalsIgnoreCase(gradeLevel)
+				|| "KF".equalsIgnoreCase(gradeLevel)) {
+			return GradeLevel.KG;
+		}
+		return GradeLevel.get(gradeLevel);
 	}
 
 	private Collection<String> listCodes(String... codes) {
