@@ -552,7 +552,15 @@ public class CardinalExport extends ToolJavaSource {
 			sb.append("['" + ddt.getDisplayString() + "', ");
 
 			sb.append("'" + btp.getPath() + "',");
-			sb.append("'" + btp.getPrimaryColumn() + "',");
+			try {
+				sb.append("'" + btp.getPrimaryColumn() + "',");
+			} catch (IllegalStateException e) {
+				// uh-oh. I don't know what this means, but someone saw an ISE
+				// here with the message:
+				// "The primary index table prefix (opn) should match this
+				// object's prefix (CJO)"
+				sb.append("'ERROR',");
+			}
 			sb.append("'" + btp.getPrimaryIndex() + "',");
 			sb.append("'" + btp.getRelatedIndex() + "',");
 			sb.append("'" + btp.getRelationshipType() + "'");
