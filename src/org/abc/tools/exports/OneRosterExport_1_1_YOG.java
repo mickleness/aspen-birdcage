@@ -1615,10 +1615,15 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 					getBroker().getPersistenceKey(), SisStudent.class);
 
 			Collection<BeanColumnPath> studentPaths = getStudentAndContactsColumns();
+
+			String lastBCPStr = null;
+
 			for (BeanColumnPath bcp : studentPaths) {
 				try {
-					boolean isContact = bcp.toString().startsWith(
+					String bcpStr = bcp.toString();
+					boolean isContact = bcpStr.startsWith(
 							SisBeanPaths.STUDENT.contacts().toString());
+					lastBCPStr = bcpStr;
 					if (isContact) {
 						if (includeContacts) {
 							builder.addColumn(bcp);
@@ -1627,7 +1632,7 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 						builder.addColumn(bcp);
 					}
 				} catch (RuntimeException e) {
-					throw e;
+					throw new RuntimeException("lastBCP: " + lastBCPStr, e);
 				}
 			}
 
