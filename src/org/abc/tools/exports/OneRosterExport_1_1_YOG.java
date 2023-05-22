@@ -1616,23 +1616,15 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 
 			Collection<BeanColumnPath> studentPaths = getStudentAndContactsColumns();
 
-			String lastBCPStr = null;
-
 			for (BeanColumnPath bcp : studentPaths) {
-				try {
-					String bcpStr = bcp.toString();
-					boolean isContact = bcpStr.startsWith(
-							SisBeanPaths.STUDENT.contacts().toString());
-					lastBCPStr = bcpStr;
-					if (isContact) {
-						if (includeContacts) {
-							builder.addColumn(bcp);
-						}
-					} else {
+				boolean isContact = bcp.toString()
+						.startsWith(SisBeanPaths.STUDENT.contacts().toString());
+				if (isContact) {
+					if (includeContacts) {
 						builder.addColumn(bcp);
 					}
-				} catch (RuntimeException e) {
-					throw new RuntimeException("lastBCP: " + lastBCPStr, e);
+				} else {
+					builder.addColumn(bcp);
 				}
 			}
 
