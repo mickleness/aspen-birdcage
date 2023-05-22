@@ -1659,7 +1659,7 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 						String identifier = (String) result
 								.getValue(m_stdLocalId);
 						String phone = (String) result.getValue(m_stdPsnPhone);
-						String yog = (String) result.getValue(m_stdYOG);
+						Integer yog = (Integer) result.getValue(m_stdYOG);
 						String username = (String) result
 								.getValue(m_stdPsnUsrLogin);
 						String stdSchoolOid = (String) result
@@ -1687,7 +1687,8 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 						user.setGivenName(givenName);
 						user.setIdentifier(identifier);
 						user.setPhone(phone);
-						user.setCustomField(FIELD_YOG, yog);
+						if (yog != null)
+							user.setCustomField(FIELD_YOG, yog.toString());
 						user.setRole(RoleType.STUDENT);
 						user.setUsername(username);
 
