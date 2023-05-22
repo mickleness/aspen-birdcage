@@ -1092,8 +1092,8 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 				.schoolCourse().course().gradeLevel();
 		BeanColumnPath mstCourseView = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.courseView();
-		BeanColumnPath mstRoomView = SisBeanPaths.STUDENT_SCHEDULE.section()
-				.roomView();
+		BeanColumnPath mstSchDisplay = SisBeanPaths.STUDENT_SCHEDULE.section()
+				.scheduleDisplay();
 		BeanColumnPath cskCourseNumber = SisBeanPaths.STUDENT_SCHEDULE.section()
 				.schoolCourse().number();
 		BeanColumnPath stfOid = SisBeanPaths.STUDENT_SCHEDULE.section()
@@ -1116,7 +1116,7 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 		builder.addColumn(cskCourseDescription);
 		builder.addColumn(crsGradeLevel);
 		builder.addColumn(mstCourseView);
-		builder.addColumn(mstRoomView);
+		builder.addColumn(mstSchDisplay);
 		builder.addColumn(cskCourseNumber);
 		builder.addColumn(stfOid);
 		builder.addColumn(stfLocalId);
@@ -1130,7 +1130,7 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 				String studentUid = createUid((String) row.getValue(stdOid),
 						(String) row.getValue(stdLocalId),
 						(String) row.getValue(stdStateId));
-				String classCode = (String) row.getValue(mstRoomView);
+				String classCode = (String) row.getValue(mstSchDisplay);
 				String nameView = (String) row.getValue(stdNameView);
 				try {
 					String enrollmentUid = createUid(
@@ -1147,7 +1147,7 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 							.getValue(cskCourseDescription);
 					GradeLevel grade = getGradeLevel(
 							(String) row.getValue(crsGradeLevel));
-					String location = (String) row.getValue(mstRoomView);
+					String schDisplay = (String) row.getValue(mstSchDisplay);
 					String courseCode = (String) row.getValue(cskCourseNumber);
 
 					// TO-DO: class type can "scheduled" or "homeroom": how do
@@ -1182,7 +1182,7 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 						c.setGrades(asList(grade));
 					}
 					c.setClassCode(classCode);
-					c.setLocation(location);
+					c.setLocation(schDisplay);
 					c.setSubjects(subjects);
 
 					Course course = new Course(courseUid);
