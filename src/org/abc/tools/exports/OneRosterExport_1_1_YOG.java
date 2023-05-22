@@ -2089,6 +2089,7 @@ public class OneRosterExport_1_1_YOG extends ExportArbor {
 		m_stdPsnMiddleName = SisBeanPaths.STUDENT.person().middleName();
 		m_stdPsnFirstName = SisBeanPaths.STUDENT.person().firstName();
 		m_stdPsnPhone = SisBeanPaths.STUDENT.person().phone01();
+		m_stdYOG = SisBeanPaths.STUDENT.yog();
 		m_stdPsnUsrLogin = SisBeanPaths.STUDENT.person().user().loginName();
 		m_stdLocalId = SisBeanPaths.STUDENT.localId();
 		m_stdStateId = SisBeanPaths.STUDENT.stateId();
