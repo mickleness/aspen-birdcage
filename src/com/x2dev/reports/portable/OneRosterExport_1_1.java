@@ -1895,19 +1895,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 				for (String key : map.keySet()
 						.toArray(new String[map.size()])) {
 					Object value = map.get(key);
-					if (value instanceof Boolean) {
-						value = value.toString().toLowerCase();
-					}
-					if (value instanceof Collection) {
-						try {
-							value = toString((Collection) value);
-							map.put(key, value);
-						} catch (RuntimeException e) {
-							logToolMessage(Level.WARNING,
-									"key: " + key + " value: " + value, false);
-							throw e;
-						}
-					}
+					value = filterValue(key, value);
+					map.put(key, value);
 				}
 				masterGrid.append(map);
 			}
@@ -1919,6 +1908,36 @@ public class OneRosterExport_1_1 extends ExportArbor {
 		} finally {
 			m_exceptionHandler.close();
 		}
+	}
+
+	/**
+	 * Filters a value before placing it in the output grid.
+	 * <p>
+	 * This converts Collections to comma-separated lists (like OR expects), and
+	 * it can intercept and correct other misc problems to customize output.
+	 * 
+	 * @param key
+	 *            the key this value relates to
+	 * @param value
+	 *            the value to convert to a String (or filter)
+	 * @return the String to put in the final CSV file
+	 */
+	private String filterValue(String key, Object value) {
+		if (value instanceof Boolean) {
+			value = value.toString().toLowerCase();
+		}
+		if (value instanceof Collection) {
+			try {
+				value = toString(key, (Collection) value);
+			} catch (RuntimeException e) {
+				logToolMessage(Level.WARNING,
+						"key: " + key + " value: " + value, false);
+				throw e;
+			}
+		}
+		if ("grades".equalsIgnoreCase(key) && "0".equals(value))
+			value = "KG";
+		return String.valueOf(value);
 	}
 
 	@Override
@@ -2494,18 +2513,22 @@ public class OneRosterExport_1_1 extends ExportArbor {
 	/**
 	 * Convert a Collection into a comma-separated String.
 	 *
+	 * @param key
+	 *            the key (attribute name) that this value is being converted
+	 *            for
 	 * @param c
 	 *            the collection to convert.
 	 *
 	 * @return String a comma-separated series of the elements in c.
 	 */
-	private String toString(Collection c) {
+	private String toString(String key, Collection c) {
 		StringBuffer sb = new StringBuffer();
 		for (Object t : c) {
 			if (sb.length() > 0) {
 				sb.append(", ");
 			}
-			sb.append(String.valueOf(t));
+			t = filterValue(key, t);
+			sb.append(t);
 		}
 
 		return sb.toString();
