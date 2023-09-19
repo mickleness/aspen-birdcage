@@ -1937,6 +1937,8 @@ public class OneRosterExport_1_1 extends ExportArbor {
 		}
 		if ("grades".equalsIgnoreCase(key) && "0".equals(value))
 			value = "KG";
+		if (value == null)
+			value = "";
 		return String.valueOf(value);
 	}
 
