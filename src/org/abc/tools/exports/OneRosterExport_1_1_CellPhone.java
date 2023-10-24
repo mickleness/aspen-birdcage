@@ -215,9 +215,11 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * This exception is thrown when we create too many beans and we want to
-	 * abort for fear of  * eventually triggering a memory error.  *  * @author
-	 * Follett Software Company  * @copyright 2017  
+	 * This exception is thrown when we create too many beans and we want to
+	 * abort for fear of eventually triggering a memory error.  
+	 * 
+	 * @author Follett Software Company
+	 * @copyright 2017  
 	 */
 	public static class RecordLimitException extends Exception {
 
@@ -227,14 +229,19 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Given a series of columns for this ScheduleTerm, return the longest
-	 * one that is strictly  * numeric.  *
+	 * Given a series of columns for this ScheduleTerm, return the longest one
+	 * that is strictly numeric.
 	 * <p>
-	 *  * For example, given columns that relate to ["0011", "01", null,
-	 * "0011,1"] this will return  * "0011".  *  * @param term the term to fetch
-	 * the columns for  * @param columnNames the names of the columns to fetch
-	 * and compare.  *  * @return String the longest numeric column provided, or
-	 * null if no qualifying Strings were  * identified.  
+	 * For example, given columns that relate to ["0011", "01", null, "0011,1"]
+	 * this will return "0011".
+	 *
+	 * @param term
+	 *            the term to fetch the columns for
+	 * @param columnNames
+	 *            the names of the columns to fetch and compare.
+	 *
+	 * @return String the longest numeric column provided, or null if no
+	 *         qualifying Strings were identified.
 	 */
 	private static String getBinaryTermMask(ScheduleTerm term,
 			Collection<String> columnNames) {
@@ -257,67 +264,73 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	private static final long serialVersionUID = 1L;
+
+	/**
+	 * Disables PERFMON4J monitoring See T30502294
+	 */
 	private static final String NO_PERFMON4J_INSTRUMENTATION = "";
 
 	/**
-	 *  * This parameter maps to a String context (CTX) oid, or if it is empty
-	 * we try to export data  * for all school years.  
+	 * This parameter maps to a String context (CTX) oid, or if it is empty we
+	 * try to export data for all school years.
 	 */
 	protected static final String PARAM_CONTEXT_OID = "contextOid";
 
 	/**
-	 *  * This parameter maps to a boolean indicating whether contacts should be
-	 * included.  * By default this is assumed to be true.  
+	 * This parameter maps to a boolean indicating whether contacts should be
+	 * included. By default this is assumed to be true.
 	 */
 	protected static final String PARAM_INCLUDE_CONTACTS = "includeContacts";
 
 	/**
-	 *  * This parameter maps to a boolean indicating whether LineItems and
-	 * Results data should be  * included.  * By default this is assumed to be
-	 * true.  
+	 * This parameter maps to a boolean indicating whether LineItems and Results
+	 * data should be included. By default this is assumed to be true.
 	 */
 	protected static final String PARAM_INCLUDE_GRADES = "includeGrades";
 
 	/**
-	 *  * This parameter maps to a String school oid, or if it is empty we try
-	 * to export data for all  * schools.  
+	 * This parameter maps to a String school oid, or if it is empty we try to
+	 * export data for all schools.
 	 */
 	protected static final String PARAM_SCHOOL_OID = "schoolOid";
+
 	/**
-	 *  * This parameter maps to a Boolean indicating whether we reject beans
-	 * that are missing required  * data.  
+	 * This parameter maps to a Boolean indicating whether we reject beans that
+	 * are missing required data.
 	 */
 	protected static final String PARAM_STRICT_FIELD_VALIDATION = "strictFieldValidation";
 
 	/**
-	 *  * This key is used in DataGrids to indicate what sheet a record belongs
-	 * to.  
+	 * This key is used in DataGrids to indicate what sheet a record belongs to.
 	 */
 	protected static final String KEY_ENTRY_NAME = "entry-name";
 
 	/**
-	 *  * This parameter maps to an integer where:  * 0 = default  * 1 = prepend
-	 * Local ID  * 2 = prepend State ID  * 3 = use only Local ID  * 4 = use only
-	 * State ID  
+	 * This parameter maps to an integer where: 0 = default 1 = prepend Local ID
+	 * 2 = prepend State ID 3 = use only Local ID 4 = use only State ID
 	 */
 	protected static final String PARAM_UID_FORMAT = "uidFormat";
 
 	/**
-	 *  * This parameter was added to allows self-hosted clients to increase  *
-	 * the total amount of millions of records limit  
+	 * This parameter was added to allows self-hosted clients to increase the
+	 * total amount of millions of records limit
 	 */
 	protected static final String PARAM_LIMIT = "maxMillionsOfRecords";
 
 	/**
-	 *  * This helper catalogs how often different errors occurred, and includes
-	 * a few sample beans of  * each error.  *  * @author Follett Software
-	 * Company  * @copyright 2017  
+	 * This helper catalogs how often different errors occurred, and includes a
+	 * few sample beans of each error.
+	 *
+	 * @author Follett Software Company
+	 * @copyright 2017
 	 */
 	class FieldValidationExceptionHandler implements Closeable {
 
 		/**
-		 *  * Details related to a type of exception.  *  * @author Follett
-		 * Software Company  * @copyright 2017  
+		 * Details related to a type of exception.
+		 *
+		 * @author Follett Software Company
+		 * @copyright 2017
 		 */
 		class Details {
 
@@ -326,9 +339,11 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 			private int m_total;
 
 			/**
-			 *  * Update internal fields to include information from this
-			 * exception.  *  * @param e the exception to add to this Details
-			 * object.  
+			 * Update internal fields to include information from this
+			 * exception.
+			 *
+			 * @param e
+			 *            the exception to add to this Details object.
 			 */
 			public void add(FieldValidationRuntimeException e) {
 				m_total++;
@@ -345,14 +360,14 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 		private int m_prunedBeanCount = 0;
 		private List<OneRosterBean> m_prunedBeans = new ArrayList<>();
 		/**
-		 *  * The first element of the key is a String message  * The second
-		 * element is the Classification enum  * The third element is OneRoster
-		 * bean type (simple name)  
+		 * The first element of the key is a String message The second element
+		 * is the Classification enum The third element is OneRoster bean type
+		 * (simple name)
 		 */
 		private Map<MultiKey, Details> m_validationExceptionMap = new LinkedHashMap<>();
 
 		/**
-		 *  * @param bean  
+		 * @param bean
 		 */
 		public void handlePrunedBean(OneRosterBean bean) {
 			m_prunedBeanCount++;
@@ -381,7 +396,7 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 		}
 
 		/**
-		 *  * This calls {@link #save()}.  
+		 * This calls {@link #save()}.
 		 */
 		@Override
 		public void close() {
@@ -389,7 +404,7 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 		}
 
 		/**
-		 *  * This saves this information to a UserToolDetail message.  
+		 * This saves this information to a UserToolDetail message.
 		 */
 		public void save() {
 			m_detailMessage = logToolMessage(m_detailMessage, Level.INFO,
@@ -397,8 +412,10 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 		}
 
 		/**
-		 *  * This produces a very large block of text summarizing all the
-		 * exceptions we've observed.  *  * @see java.lang.Object#toString()  
+		 * This produces a very large block of text summarizing all the
+		 * exceptions we've observed.
+		 *
+		 * @see java.lang.Object#toString()
 		 */
 		@Override
 		public String toString() {
@@ -560,38 +577,38 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 			.compile("0*1*0*");
 
 	/**
-	 *  * A Schedule object will generally represent a large block time such as
-	 * the 2012-13 school year  * divided up into ScheduleTerms.  * But those
-	 * ScheduleTerms may actually have a hierarchy resembling:  *  *
-	 * 
+	 * A Schedule object will generally represent a large block time such as the
+	 * 2012-13 school year divided up into ScheduleTerms. But those
+	 * ScheduleTerms may actually have a hierarchy resembling:
+	 *
 	 * <pre>
-	  * full year
-	  *  semester 1
-	  *    term 1
-	  *    term 2
-	  *  semester 2
-	  *    term 3
-	  *    term 4
-	  *
+	 * full year
+	 *  semester 1
+	 *    term 1
+	 *    term 2
+	 *  semester 2
+	 *    term 3
+	 *    term 4
 	 * </pre>
-	 * 
-	 *  *  * or:  *  *
-	 * 
+	 *
+	 * or:
+	 *
 	 * <pre>
-	  * full year
-	  *  trimester 1
-	  *  trimester 2
-	  *  trimester 3
-	  *
+	 * full year
+	 *  trimester 1
+	 *  trimester 2
+	 *  trimester 3
 	 * </pre>
-	 * 
-	 *  *  *
+	 *
 	 * <p>
-	 *  * This method analyzes the term maps (masks) of each ScheduleTerm and
-	 * identifies which  * ScheduleTerm, if any, is its parent.  *  * @param
-	 * scheduleTerms a collection of ScheduleTerms to analyze.  *  * @return a
-	 * map of ScheduleTerms mapped to their parent. If a ScheduleTerm has no
-	 * parent then  * it is represented as a key in this map.  
+	 * This method analyzes the term maps (masks) of each ScheduleTerm and
+	 * identifies which ScheduleTerm, if any, is its parent.
+	 *
+	 * @param scheduleTerms
+	 *            a collection of ScheduleTerms to analyze.
+	 *
+	 * @return a map of ScheduleTerms mapped to their parent. If a ScheduleTerm
+	 *         has no parent then it is represented as a key in this map.
 	 */
 	public static Map<ScheduleTerm, ScheduleTerm> createTree(
 			Collection<ScheduleTerm> scheduleTerms) {
@@ -653,10 +670,11 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * This wraps Arrays.asList() in an ArrayList<>(), because apparently  *
-	 * the former doesn't support an iterator that can remove elements.  *  *
+	 * This wraps Arrays.asList() in an ArrayList<>(), because apparently the
+	 * former doesn't support an iterator that can remove elements.
+	 *
 	 * Also if the argument is a 1-element array where the only element is null:
-	 *  * we return an empty list.  
+	 * we return an empty list.
 	 */
 	public static <K> List<K> asList(K... a) {
 		if (a.length == 1 && a[0] == null) {
@@ -673,7 +691,7 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 		while (as != null) {
 			ThreadUtils.checkInterrupt();
 
-			if ("schoolYear".equals(as.getType())) {
+			if ("schoolYear".equals(as.getType().name())) {
 				return as.getSourcedId();
 			}
 
@@ -695,7 +713,7 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 			true);
 
 	/**
-	 *  * Create a UID for a bean's oid  
+	 * Create a UID for a bean's oid
 	 */
 	public String createUid(String beanOid, String localId, String stateId) {
 		if (beanOid == null) {
@@ -747,8 +765,12 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 			"Ongoing Social Worke", "Self", "Social Worker", "Student",
 			"Surrogate");
 
+	private List<String> barglist = Arrays.asList("Administration",
+			"Facilities", "Food Service", "Nurses", "Administration", "Other",
+			"Secretarial", "TA/EA", "Teachers");
+
 	/**
-	 *  * The last timestamp when a UserToolDetail message was updated.  
+	 * The last timestamp when a UserToolDetail message was updated.
 	 */
 	protected Map<String, Long> m_lastStatusUpdate;
 
@@ -789,11 +811,16 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	private BeanColumnPath m_ctjPsnUsrLogin;
 
 	/**
-	 *  * Append an incoming grid to a master grid. Each row has a new key/value
-	 * pair added:  * KEY_ENTRY_NAME -> incomingName.  *  * @param masterGrid
-	 * the grid to add rows to  * @param incomingGrid the grid to read rows from
-	 *  * @param incomingName the value of KEY_ENTRY_NAME, which ultimately
-	 * determines which csv file  *    each record appears in.  
+	 * Append an incoming grid to a master grid. Each row has a new key/value
+	 * pair added: KEY_ENTRY_NAME -> incomingName.
+	 *
+	 * @param masterGrid
+	 *            the grid to add rows to
+	 * @param incomingGrid
+	 *            the grid to read rows from
+	 * @param incomingName
+	 *            the value of KEY_ENTRY_NAME, which ultimately determines which
+	 *            csv file each record appears in.
 	 */
 	protected void append(DataGrid masterGrid, DataGrid incomingGrid,
 			String incomingName) {
@@ -804,8 +831,11 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Create all the OneRosterBeans and store them in m_allBeans.  *
-	 *  * @throws RecordLimitException  *  * @throws Exception  
+	 * Create all the OneRosterBeans and store them in m_allBeans.
+	 *
+	 * @throws RecordLimitException
+	 *
+	 * @throws Exception
 	 */
 	protected void buildBeans() throws RecordLimitException {
 		boolean includeGrades = !Boolean.FALSE
@@ -847,9 +877,10 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Create the AcademicSession beans, which map directly to Aspen's
-	 * ScheduleTerm records.  *  * @return int the number of academic session
-	 * records created.  
+	 * Create the AcademicSession beans, which map directly to Aspen's
+	 * ScheduleTerm records.
+	 *
+	 * @return int the number of academic session records created.
 	 */
 	@SuppressWarnings("unused")
 	protected int createAcademicSessions() throws RecordLimitException {
@@ -868,13 +899,14 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 		X2Criteria c = new X2Criteria();
 
 		/*
-		 *  * We observed a case where other beans were being thrown out because
-		 *  * they were missing their term. It turns out the problem was those
-		 *  * beans (despite being related to the given school) somehow  *
-		 * pointed to a grade term that was NOT associated with the same school.
-		 *  *  * The simplest solution is: don't add school to the criteria
-		 * here.  * Cast a wider net, and rely on our other pruning mechanisms
-		 * to purge  * unneeded records later.  
+		 * We observed a case where other beans were being thrown out because
+		 * they were missing their term. It turns out the problem was those
+		 * beans (despite being related to the given school) somehow pointed to
+		 * a grade term that was NOT associated with the same school.
+		 *
+		 * The simplest solution is: don't add school to the criteria here. Cast
+		 * a wider net, and rely on our other pruning mechanisms to purge
+		 * unneeded records later.
 		 */
 		if (false) {
 			String schoolOid = (String) getParameter(PARAM_SCHOOL_OID);
@@ -1022,9 +1054,11 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Create the Enrollment, Class and Course beans, which map directly to
-	 * Aspen's StudentSchedule,  * MasterSchedule, SchoolCourse records.  *
-	 *  * @param the number of enrollment records saved.  
+	 * Create the Enrollment, Class and Course beans, which map directly to
+	 * Aspen's StudentSchedule, MasterSchedule, SchoolCourse records.
+	 *
+	 * @param the
+	 *            number of enrollment records saved.
 	 */
 	protected int createEnrollments() throws RecordLimitException {
 		int ctr = 0;
@@ -1356,8 +1390,10 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Create the Organization beans, which map directly to Aspen's SisSchool
-	 * records.  *  * @return int the number of organization records created.  
+	 * Create the Organization beans, which map directly to Aspen's SisSchool
+	 * records.
+	 *
+	 * @return int the number of organization records created.
 	 */
 	protected int createOrganizations() throws RecordLimitException {
 		RowResult.IteratorBuilder<SisSchool> builder = new RowResult.IteratorBuilder<>(
@@ -1534,11 +1570,11 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * This makes sure every category (including demographics) is given a
-	 * separate tab,  * because the specification says that file must be present
-	 * (even if it is empty).  *  * @see
-	 * com.follett.cust.reports.ExportArbor#createTabs(com.x2dev.utils.DataGrid)
-	 *  
+	 * This makes sure every category (including demographics) is given a
+	 * separate tab, because the specification says that file must be present
+	 * (even if it is empty).
+	 *
+	 * @see com.follett.cust.reports.ExportArbor#createTabs(com.x2dev.utils.DataGrid)
 	 */
 	@Override
 	protected Map<Object, DataGrid> createTabs(DataGrid dataGrid) {
@@ -1553,9 +1589,10 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Create the User beans, which map to either Aspen's SisStudent,
-	 * StudentContact, or SisStaff  * records.  *  * @return int the number of
-	 * user records created.  
+	 * Create the User beans, which map to either Aspen's SisStudent,
+	 * StudentContact, or SisStaff records.
+	 *
+	 * @return int the number of user records created.
 	 */
 	protected int createUsers() throws RecordLimitException {
 		int ctr = 0;
@@ -1764,6 +1801,8 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 			}
 			criteria.addEqualTo(SisBeanPaths.STAFF.status().toString(),
 					activeStatus);
+			criteria.addIn(SisBeanPaths.STAFF.bargainingUnit().toString(),
+					barglist);
 
 			RowResult.IteratorBuilder<SisStaff> builder = new RowResult.IteratorBuilder<>(
 					getBroker().getPersistenceKey(), SisStaff.class);
@@ -1875,9 +1914,10 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Return a collection of columns to retrieve from the STUDENT table,
-	 * including  * "student.contacts.*" paths to enumerate contacts.  *
-	 *  * @return a collection of columns to retrieve from the STUDENT table.  
+	 * Return a collection of columns to retrieve from the STUDENT table,
+	 * including "student.contacts.*" paths to enumerate contacts.
+	 *
+	 * @return a collection of columns to retrieve from the STUDENT table.
 	 */
 	protected Collection<BeanColumnPath> getStudentAndContactsColumns() {
 		return new ArrayList<>(Arrays.asList(m_stdOid, m_stdNameView,
@@ -2025,8 +2065,9 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Returns CSV_ZIP, per One Roster requirements.  *  * @see
-	 * com.follett.cust.reports.ExportArbor#getFileType()  
+	 * Returns CSV_ZIP, per One Roster requirements.
+	 *
+	 * @see com.follett.cust.reports.ExportArbor#getFileType()
 	 */
 	@Override
 	protected FileType getFileType() {
@@ -2034,8 +2075,8 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Given an Aspen relationship code, this identifies the appropriate One
-	 * Roster role value.  
+	 * Given an Aspen relationship code, this identifies the appropriate One
+	 * Roster role value.
 	 */
 	protected RoleType getRole(OneRosterBean bean, Field field,
 			String relationshipCode) {
@@ -2115,10 +2156,14 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Return true if a couple of seconds have passed and we should offer a
-	 *  * status update.  *  * @param id an ID indicating which UserToolDetail
-	 * message should be updated.  * @return true if a couple of seconds have
-	 * passed and we should offer a  * status update.  
+	 * Return true if a couple of seconds have passed and we should offer a
+	 * status update.
+	 *
+	 * @param id
+	 *            an ID indicating which UserToolDetail message should be
+	 *            updated.
+	 * @return true if a couple of seconds have passed and we should offer a
+	 *         status update.
 	 */
 	protected boolean isStatusUpdate(String id) {
 		long time = System.currentTimeMillis();
@@ -2138,14 +2183,20 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Update the m_currentStatus message so we can see what step we're on
-	 * and how progress is  * proceeding.  *  * @param ctr the index of the
-	 * element being processed.  * @param max the maximum number of elements we
-	 * expect to process.  * @param label the element being processed. This is
-	 * the [Z] in the expression: "Processed X of  *    Y [Z]..."  * @param
-	 * forceUpdateImmediately if true then we will immediately log this message.
-	 * If false  *    then we only update this message when
-	 * {@link #isStatusUpdate(String)} returns true  
+	 * Update the m_currentStatus message so we can see what step we're on and
+	 * how progress is proceeding.
+	 *
+	 * @param ctr
+	 *            the index of the element being processed.
+	 * @param max
+	 *            the maximum number of elements we expect to process.
+	 * @param label
+	 *            the element being processed. This is the [Z] in the
+	 *            expression: "Processed X of Y [Z]..."
+	 * @param forceUpdateImmediately
+	 *            if true then we will immediately log this message. If false
+	 *            then we only update this message when
+	 *            {@link #isStatusUpdate(String)} returns true
 	 */
 	protected void logStatus(int ctr, int max, String label,
 			boolean forceUpdateImmediately) {
@@ -2159,12 +2210,15 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Starting with enrollment and user beans: track every possible record
-	 * of interest in this  * system, and prune/purge orphaned beans.  *  * For
-	 * example: if at one point we added a bean for a school year
-	 * (AcademicSession), but none of  * our enrollment records refer to it:
-	 * then we purge it.  *  * @return boolean true if node were pruned, false
-	 * if no changes were necessary.  
+	 * Starting with enrollment and user beans: track every possible record of
+	 * interest in this system, and prune/purge orphaned beans.
+	 *
+	 * For example: if at one point we added a bean for a school year
+	 * (AcademicSession), but none of our enrollment records refer to it: then
+	 * we purge it.
+	 *
+	 * @return boolean true if node were pruned, false if no changes were
+	 *         necessary.
 	 */
 	protected boolean pruneOrphanedNodes() {
 		Collection<BeanId> requiredNodes = new HashSet<>();
@@ -2182,12 +2236,12 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 				User user = (User) bean;
 				RoleType role = user.getRole();
 				/*
-				 *  * We'll give a free pass to students and contacts and
-				 * administrators, but  * "teachers" need to be dropped unless
-				 * we're explicitly sure they're appropriate.  * Earlier (search
+				 * We'll give a free pass to students and contacts and
+				 * administrators, but "teachers" need to be dropped unless
+				 * we're explicitly sure they're appropriate. Earlier (search
 				 * for "User.FIELD_ROLE.validate") we assume unrecognized users
-				 * are  * teachers with the assumption that we'll prune mistakes
-				 * later -- this is where  * that pruning occurs.  
+				 * are teachers with the assumption that we'll prune mistakes
+				 * later -- this is where that pruning occurs.
 				 */
 				if (!RoleType.TEACHER.equals(role)) {
 					requiredNodes.add(bean.getBeanId());
@@ -2359,7 +2413,8 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 				if (bean instanceof User) {
 					RoleType role = ((User) bean).getRole();
 					if (RoleType.ADMINISTRATOR == role || RoleType.AIDE == role
-							|| RoleType.PROCTOR == role) {
+							|| RoleType.PROCTOR == role
+							|| RoleType.TEACHER == role) {
 						continue;
 					}
 				}
@@ -2373,15 +2428,20 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Save one or more beans to the {@link #m_allBeans} map. This may also
-	 * validate the bean fields  * (not the relationships), and this may throw a
-	 * RuntimeException if bad fields are identified.  *  * @param result the
-	 * optional RowResult that helped create the OneRosterBeans.  * @param
-	 * throwErrorForUsedUid if true then this will throw an exception if the
-	 * bean ID is  *    already in use. For example: if the user has requested
-	 * to use local IDs of users and  *    staff as the UID for the
-	 * OneRosterBean: we need to throw an exception if the same ID  *    is
-	 * being used for two different people.  * @param beans the beans to save.  
+	 * Save one or more beans to the {@link #m_allBeans} map. This may also
+	 * validate the bean fields (not the relationships), and this may throw a
+	 * RuntimeException if bad fields are identified.
+	 *
+	 * @param result
+	 *            the optional RowResult that helped create the OneRosterBeans.
+	 * @param throwErrorForUsedUid
+	 *            if true then this will throw an exception if the bean ID is
+	 *            already in use. For example: if the user has requested to use
+	 *            local IDs of users and staff as the UID for the OneRosterBean:
+	 *            we need to throw an exception if the same ID is being used for
+	 *            two different people.
+	 * @param beans
+	 *            the beans to save.
 	 */
 	protected void saveBean(RowResult result, boolean throwErrorForUsedUid,
 			OneRosterBean... beans) throws RecordLimitException {
@@ -2426,13 +2486,13 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * The maximum number of beans this export will save. If we exceed this
-	 * amount an exception  * is thrown. The recommended default value here is
-	 * 1,000,000.  *
+	 * The maximum number of beans this export will save. If we exceed this
+	 * amount an exception is thrown. The recommended default value here is
+	 * 1,000,000.
 	 * <p>
-	 *  * This is an arbitrary limit, but please don't remove it entirely if
-	 * you're dealing  * with a large school. Remember if this export fails with
-	 * a memory exception: it may bring  * down the rest of the VM with it.  
+	 * This is an arbitrary limit, but please don't remove it entirely if you're
+	 * dealing with a large school. Remember if this export fails with a memory
+	 * exception: it may bring down the rest of the VM with it.
 	 */
 	private int getLimit() {
 		Number n = (Number) getParameter(PARAM_LIMIT);
@@ -2445,11 +2505,17 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Save a Demographics record that includes the birthdate and gender of a
-	 * User.  *  * @param user the user to write the demographics record for.
-	 *  * @param birthdate the optional birthdate  * @param genderCode the
-	 * optional gender code (as defined in Aspen)  *  * @return true if a
-	 * Demographics bean is saved, false otherwise.  
+	 * Save a Demographics record that includes the birthdate and gender of a
+	 * User.
+	 *
+	 * @param user
+	 *            the user to write the demographics record for.
+	 * @param birthdate
+	 *            the optional birthdate
+	 * @param genderCode
+	 *            the optional gender code (as defined in Aspen)
+	 *
+	 * @return true if a Demographics bean is saved, false otherwise.
 	 */
 	protected boolean saveUserDemographic(User user, Date birthdate,
 			String genderCode) throws RecordLimitException {
@@ -2469,8 +2535,12 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Add an agent to a user.  *  * @param user the user to add the agent
-	 * to.  * @param otherUserUid the id to add to the user's list of agents.  
+	 * Add an agent to a user.
+	 *
+	 * @param user
+	 *            the user to add the agent to.
+	 * @param otherUserUid
+	 *            the id to add to the user's list of agents.
 	 */
 	private void addAgent(User user, String otherUserUid) {
 		List<String> orgs = user.getAgents();
@@ -2482,9 +2552,12 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Add an organization to a user.  *  * @param user the user to add the
-	 * organization to.  * @param schoolId the id to add to the user's list of
-	 * organizations.  
+	 * Add an organization to a user.
+	 *
+	 * @param user
+	 *            the user to add the organization to.
+	 * @param schoolId
+	 *            the id to add to the user's list of organizations.
 	 */
 	private void addOrg(User user, String schoolId) {
 		List<String> orgs = user.getOrgSourcedIds();
@@ -2496,9 +2569,11 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Return the GradeLevel associated with a String.  *  * @param
-	 * gradeLevel a text representation of a GradeLevel.  * @return a
-	 * GradeLevel, or null if the argument isn't recognized.  
+	 * Return the GradeLevel associated with a String.
+	 *
+	 * @param gradeLevel
+	 *            a text representation of a GradeLevel.
+	 * @return a GradeLevel, or null if the argument isn't recognized.
 	 */
 	private GradeLevel getGradeLevel(String gradeLevel) {
 		// TODO: we can remove this method later; we're trying to push this
@@ -2535,9 +2610,12 @@ public class OneRosterExport_1_1_CellPhone extends ExportArbor {
 	}
 
 	/**
-	 *  * Convert a Collection into a comma-separated String.  *  * @param c the
-	 * collection to convert.  *  * @return String a comma-separated series of
-	 * the elements in c.  
+	 * Convert a Collection into a comma-separated String.
+	 *
+	 * @param c
+	 *            the collection to convert.
+	 *
+	 * @return String a comma-separated series of the elements in c.
 	 */
 	private String toString(Collection c) {
 		StringBuffer sb = new StringBuffer();
