@@ -1625,8 +1625,9 @@ public class OneRosterExport_1_1_Birdcage extends ExportArbor {
 					.firstName();
 			BeanColumnPath stdPsnPhone = SisBeanPaths.STUDENT.person()
 					.phone01();
-			BeanColumnPath stdPsnUsrLogin = SisBeanPaths.STUDENT.person().user()
-					.loginName();
+			// BeanColumnPath stdPsnUsrLogin =
+			// SisBeanPaths.STUDENT.person().user().loginName();
+			BeanColumnPath stdPsnUsrLogin = SisBeanPaths.STUDENT.field().B031();
 			BeanColumnPath stdLocalId = SisBeanPaths.STUDENT.localId();
 			BeanColumnPath stdStateId = SisBeanPaths.STUDENT.stateId();
 			BeanColumnPath stdSklOid = SisBeanPaths.STUDENT.schoolOid();
