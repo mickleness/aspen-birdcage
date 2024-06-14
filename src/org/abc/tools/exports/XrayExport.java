@@ -44,174 +44,209 @@ public class XrayExport extends ToolJavaSource {
 		sourceCodeManager = new SourceCodeManager();
 
 		// tools
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.tools.reports.StudentReportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.tools.reports.GradeReportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.tools.reports.ImmunizationReportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.tools.reports.ScheduleReportDataSource.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.tools.reports.ScheduleReportHelper.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.QuickChartData.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.Breakable.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.BaseFormReportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.QueryIteratorDataSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.imports.ImportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.imports.XmlDefinitionImport.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.imports.XmlDefinitionManager.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.imports.TextImportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.imports.XlsImportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.exports.XmlDefinitionExport.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.exports.ExportJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.procedures.ProcedureJavaSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.procedures.DynamicFormProcedure.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.procedures.WorkflowProcedure.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.procedures.SessionAwareProcedure.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.procedures.QuickLetterData.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.tools.reports.StudentReportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.tools.reports.GradeReportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.tools.reports.ImmunizationReportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.tools.reports.ScheduleReportDataSource.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.tools.reports.ScheduleReportHelper.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.QuickChartData.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.Breakable.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.BaseFormReportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.QueryIteratorDataSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.imports.ImportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.imports.XmlDefinitionImport.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.imports.XmlDefinitionManager.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.imports.TextImportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.imports.XlsImportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.exports.XmlDefinitionExport.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.exports.ExportJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.procedures.ProcedureJavaSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.procedures.DynamicFormProcedure.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.procedures.WorkflowProcedure.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.procedures.SessionAwareProcedure.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.procedures.QuickLetterData.class);
 
 		// data sources
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.SecondaryStudentDataSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.SimpleFormDataSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.SimpleBeanDataSource.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.BeanCollectionDataSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.SecondaryStudentDataSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.SimpleFormDataSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.SimpleBeanDataSource.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.BeanCollectionDataSource.class);
+
+		// Jasper:
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports.engine.JRDataSource.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports3.engine.JRDataSource.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports5.engine.JRDataSource.class);
-		sourceCodeManager
-				.addClasses(net.sf.jasperreports.engine.data.JRBeanCollectionDataSource.class);
-		sourceCodeManager
-				.addClasses(net.sf.jasperreports3.engine.data.JRBeanCollectionDataSource.class);
-		sourceCodeManager
-				.addClasses(net.sf.jasperreports5.engine.data.JRBeanCollectionDataSource.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports.engine.data.JRBeanCollectionDataSource.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports3.engine.data.JRBeanCollectionDataSource.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.data.JRBeanCollectionDataSource.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports.engine.JRException.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports3.engine.JRException.class);
 		sourceCodeManager
 				.addClasses(net.sf.jasperreports5.engine.JRException.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports.engine.JRRewindableDataSource.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports3.engine.JRRewindableDataSource.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.JRRewindableDataSource.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.renderers.JFreeChartRenderer.class);
+
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.fill.ThreadPoolSubreportRunnerFactory.class);
 		sourceCodeManager
-				.addClasses(net.sf.jasperreports.engine.JRRewindableDataSource.class);
+				.addClasses(net.sf.jasperreports.engine.util.JRLoader.class);
 		sourceCodeManager
-				.addClasses(net.sf.jasperreports3.engine.JRRewindableDataSource.class);
+				.addClasses(net.sf.jasperreports3.engine.util.JRLoader.class);
 		sourceCodeManager
-				.addClasses(net.sf.jasperreports5.engine.JRRewindableDataSource.class);
+				.addClasses(net.sf.jasperreports5.engine.util.JRLoader.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.DefaultJasperReportsContext.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.SimpleJasperReportsContext.class);
 		sourceCodeManager
-				.addClasses(net.sf.jasperreports5.renderers.JFreeChartRenderer.class);
+				.addClasses(net.sf.jasperreports.engine.fill.JRFiller.class);
+		sourceCodeManager
+				.addClasses(net.sf.jasperreports3.engine.fill.JRFiller.class);
+		sourceCodeManager
+				.addClasses(net.sf.jasperreports5.engine.fill.JRFiller.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports.engine.fill.JRFillContext.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports3.engine.fill.JRFillContext.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.fill.JRFillContext.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.JRPropertiesUtil.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports.engine.JasperFillManager.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports3.engine.JasperFillManager.class);
+		sourceCodeManager.addClasses(
+				net.sf.jasperreports5.engine.JasperFillManager.class);
 
 		// managers
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.StudentManager.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.PreferenceManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.EnrollmentManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.GraduationManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.AttendanceManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.ElementaryScheduleManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.GradeAverageManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.GradebookUpdateManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.GradePostManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.PdAttendanceManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.RecordAccessManagerSis.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.RubricStandardsInitializer.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.SisAnnouncementManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.SisStudentAlertManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.SisStudentManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.SpedNotificationManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.StaffClassSectionManager.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.StudentManager.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.PreferenceManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.EnrollmentManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.GraduationManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.AttendanceManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.ElementaryScheduleManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.GradeAverageManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.GradebookUpdateManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.GradePostManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.PdAttendanceManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.RecordAccessManagerSis.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.RubricStandardsInitializer.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.SisAnnouncementManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.SisStudentAlertManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.SisStudentManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.SpedNotificationManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.StaffClassSectionManager.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.ConductManager.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.CourseManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.StudentAttendanceManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.StudentDailyAttendanceManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.StudentPeriodAttendanceManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.StudentProgramParticipationManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.assessment.RubricManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.gradebook.GradebookManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.gradebook.GradebookImportManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.assignment.AssignmentManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.assignment.AssignmentAttachmentHelper.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.schedule.ScheduleManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.schedule.future.StudentScheduleChangeReportHelper.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.StaffAttendanceManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.StudentAttendanceManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.StudentDailyAttendanceManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.StudentPeriodAttendanceManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.StudentProgramParticipationManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.assessment.RubricManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.gradebook.GradebookManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.gradebook.GradebookImportManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.assignment.AssignmentManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.assignment.AssignmentAttachmentHelper.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.schedule.ScheduleManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.schedule.future.StudentScheduleChangeReportHelper.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.StaffAttendanceManager.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.CalendarManager.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.OrganizationManager.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.attendance.AttendanceManagerFactory.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.WriteEmailManager.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.AuditXmlManager.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.OrganizationManager.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.attendance.AttendanceManagerFactory.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.WriteEmailManager.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.AuditXmlManager.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.tools.GuidManager.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.stateexports.ExportFormatManager.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.stateexports.ExportFormatManager.class);
 
 		// helpers
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.tools.stateexports.StudentHistoryHelper.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.attendance.StaffAttendanceHelper.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.tools.stateexports.StudentHistoryHelper.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.attendance.StaffAttendanceHelper.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.CalendarHelper.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.business.MultiStudentAttendanceSummary.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.ToolObjectFactory.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.business.MultiStudentAttendanceSummary.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.ToolObjectFactory.class);
 
 		// utils
 		sourceCodeManager.addClasses(com.x2dev.utils.Base64.class);
@@ -239,63 +274,63 @@ public class XrayExport extends ToolJavaSource {
 				.addClasses(com.x2dev.sis.web.gradebook.GradeInputUtils.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.business.sped.SpedUtils.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.ReportUtils.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.ReportUtils.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.web.AppGlobals.class);
 		sourceCodeManager.addClasses(com.x2dev.utils.ZipUtils.class);
 		sourceCodeManager.addClasses(com.x2dev.utils.NumberUtils.class);
 		sourceCodeManager
 				.addClasses(org.apache.commons.lang.time.DateUtils.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.localization.LocalizationResourceBundle.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.localization.LocalizationResourceBundle.class);
 
 		// constants
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.tools.reports.ReportConstants.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.ValidationConstants.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.beans.SisPreferenceConstants.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.tools.reports.ReportConstants.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.ValidationConstants.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.beans.SisPreferenceConstants.class);
 		sourceCodeManager.addClasses(com.x2dev.utils.UtilsConstants.class);
 		sourceCodeManager.addClasses(com.x2dev.utils.UtilsGlobals.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.web.AppConstants.class);
 
 		// misc
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.model.beans.StaffAttendanceSub.SubstituteType.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.model.beans.StaffAttendanceSub.SubstituteType.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.web.SisUserDataContainer.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.web.gradebook.ScoreGrid.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.localization.LocalizationCache.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.k12.business.PrivilegeGrid.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.framework.persistence.DatabaseOptimizer.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.framework.persistence.DatabaseOptimizerFactory.class);
-		sourceCodeManager
-				.addClasses(com.x2dev.sis.web.gradebook.LimitedColumnScoreGrid.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.localization.LocalizationCache.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.k12.business.PrivilegeGrid.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.framework.persistence.DatabaseOptimizer.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.framework.persistence.DatabaseOptimizerFactory.class);
+		sourceCodeManager.addClasses(
+				com.x2dev.sis.web.gradebook.LimitedColumnScoreGrid.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.web.AppGlobals.class);
 		sourceCodeManager
 				.addClasses(com.x2dev.sis.model.beans.path.SisBeanPaths.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.framework.persistence.TempTable.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.framework.persistence.adjusters.DistinctAdjuster.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.core.framework.persistence.RowResultIteratorBuilder.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.framework.persistence.TempTable.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.framework.persistence.adjusters.DistinctAdjuster.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.core.framework.persistence.RowResultIteratorBuilder.class);
 		sourceCodeManager.addClasses(com.x2dev.utils.KeyValueTrio.class);
 		sourceCodeManager
 				.addClasses(org.apache.ojb.broker.query.QueryByIdentity.class);
 		sourceCodeManager
 				.addClasses(com.follett.fsc.core.k12.web.template.Cell.class);
-		sourceCodeManager
-				.addClasses(com.follett.fsc.ws.client.WebServiceException.class);
+		sourceCodeManager.addClasses(
+				com.follett.fsc.ws.client.WebServiceException.class);
 
 		String[] columns = { SisDataTable.COL_CLASS_NAME };
 		ColumnQuery query = new ColumnQuery(SisDataTable.class, columns,
@@ -348,7 +383,8 @@ public class XrayExport extends ToolJavaSource {
 
 					for (ClassWriter writer : classWriters) {
 						File file = createFile(tempFolder, writer.getType());
-						try (OutputStream fileOut = new FileOutputStream(file)) {
+						try (OutputStream fileOut = new FileOutputStream(
+								file)) {
 							try (ClassWriterStream cws = new ClassWriterStream(
 									fileOut, true, "UTF-8")) {
 								writer.write(cws);
@@ -360,10 +396,10 @@ public class XrayExport extends ToolJavaSource {
 					try (ByteArrayOutputStream byteOut = new ByteArrayOutputStream()) {
 						Object returnValue;
 						try (PrintWriter writer = new PrintWriter(byteOut)) {
-							String[] args = argList.toArray(new String[argList
-									.size()]);
-							returnValue = mainMethod.invoke(null, new Object[] {
-									args, writer });
+							String[] args = argList
+									.toArray(new String[argList.size()]);
+							returnValue = mainMethod.invoke(null,
+									new Object[] { args, writer });
 						}
 
 						int returnInt = ((Number) returnValue).intValue();
@@ -421,7 +457,8 @@ public class XrayExport extends ToolJavaSource {
 								p1 = p1.substring(1);
 							p1 = p1.replace(File.separatorChar, '/');
 							jarOut.putNextEntry(new JarEntry(p1));
-							try (FileInputStream in = new FileInputStream(file)) {
+							try (FileInputStream in = new FileInputStream(
+									file)) {
 								IOUtils.write(in, jarOut);
 							}
 						}
@@ -456,11 +493,8 @@ public class XrayExport extends ToolJavaSource {
 				return file;
 			}
 		};
-		jarBuilder
-				.getManifest()
-				.getMainAttributes()
-				.putValue("Aspen-Version",
-						com.follett.fsc.core.k12.web.AppGlobals.getVersion());
+		jarBuilder.getManifest().getMainAttributes().putValue("Aspen-Version",
+				com.follett.fsc.core.k12.web.AppGlobals.getVersion());
 		jarBuilder.write(getResultHandler().getOutputStream());
 	}
 
